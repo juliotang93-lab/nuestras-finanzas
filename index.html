@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; worker-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Nuestras Finanzas</title>
+  <meta name="description" content="Gastos, carteras y reportes compartidos.">
+  <meta name="theme-color" content="#EDF0F5">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Finanzas">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="gated">
+  <!-- Entrada: se muestra hasta que la cuenta esté verificada -->
+  <div class="gate" id="gate">
+    <div class="gate-card">
+      <svg class="gate-logo" viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="lgbg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4C5CE0"/><stop offset="1" stop-color="#2B37A3"/></linearGradient></defs><rect width="512" height="512" rx="114" fill="url(#lgbg2)"/><circle cx="204" cy="282" r="118" fill="#fff"/><circle cx="204" cy="282" r="88" fill="none" stroke="#DCE1F5" stroke-width="10"/><circle cx="312" cy="226" r="118" fill="#3FCB9F" stroke="#3743B8" stroke-width="18"/><path d="M312 288C312 288 252 252 252 214C252 192 270 178 288 178C300 178 308 185 312 194C316 185 324 178 336 178C354 178 372 192 372 214C372 252 312 288 312 288Z" fill="#fff"/></svg>
+      <h1>Nuestras Finanzas</h1>
+      <div id="gateBody"><p class="gate-lead">Abriendo…</p></div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <header class="topbar">
+      <div class="brand"><svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="lgbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4C5CE0"/><stop offset="1" stop-color="#2B37A3"/></linearGradient></defs><rect width="512" height="512" rx="114" fill="url(#lgbg)"/><circle cx="204" cy="282" r="118" fill="#fff"/><circle cx="204" cy="282" r="88" fill="none" stroke="#DCE1F5" stroke-width="10"/><circle cx="312" cy="226" r="118" fill="#3FCB9F" stroke="#3743B8" stroke-width="18"/><path d="M312 288C312 288 252 252 252 214C252 192 270 178 288 178C300 178 308 185 312 194C316 185 324 178 336 178C354 178 372 192 372 214C372 252 312 288 312 288Z" fill="#fff"/></svg><span>Nuestras finanzas</span></div>
+      <div class="tabs" role="tablist">
+        <button role="tab" data-view="mov" aria-selected="true">Movimientos</button>
+        <button role="tab" data-view="rep" aria-selected="false">Reportes</button>
+      </div>
+      <button class="icon-btn" id="refreshBtn" aria-label="Actualizar datos" title="Actualizar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+      </button>
+      <button class="icon-btn" id="shareBtn" aria-label="Personas y cuenta" title="Personas y cuenta">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M17 11v6M14 14h6"/></svg>
+      </button>
+      <button class="icon-btn" id="themeBtn" aria-label="Cambiar tema" title="Modo claro/oscuro"></button>
+    </header>
+
+    <nav class="wallets" id="walletStrip" aria-label="Carteras"></nav>
+
+    <section class="filters" aria-label="Rango de fechas">
+      <div>
+        <label for="preset">Período</label>
+        <select id="preset">
+          <option value="month">Este mes</option>
+          <option value="lastMonth">Mes pasado</option>
+          <option value="last30">Últimos 30 días</option>
+          <option value="last90">Últimos 90 días</option>
+          <option value="year">Este año</option>
+          <option value="all">Todo</option>
+          <option value="custom">Personalizado</option>
+        </select>
+      </div>
+      <div><label for="from">Desde</label><input type="date" id="from"></div>
+      <div><label for="to">Hasta</label><input type="date" id="to"></div>
+      <div class="period" id="periodLabel"></div>
+    </section>
+
+    <div class="warn" id="accessNotice" hidden></div>
+
+    <section class="hero" aria-live="polite">
+      <p class="hero-label" id="balanceLabel">Balance total</p>
+      <div class="balance num" id="balance">—</div>
+      <div class="split-bar" aria-hidden="true"><i class="in" id="barIn" style="width:50%"></i><i class="out" id="barOut" style="width:50%"></i></div>
+      <div class="month-stats">
+        <div class="stat in">
+          <div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></div>
+          <div><p>Ingresos del período</p><strong class="num" id="sumIn">—</strong></div>
+        </div>
+        <div class="stat out">
+          <div class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg></div>
+          <div><p>Gastos del período</p><strong class="num" id="sumOut">—</strong></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Vista: Movimientos -->
+    <div class="grid" id="viewMov">
+      <aside class="side">
+        <section class="panel" id="formPanel">
+          <h2 id="formTitle">Nuevo movimiento</h2>
+          <div class="type-toggle" id="formType" role="group" aria-label="Tipo de movimiento">
+            <button type="button" data-type="Gasto" aria-pressed="true">Gasto</button>
+            <button type="button" data-type="Ingreso" aria-pressed="false">Ingreso</button>
+          </div>
+          <div class="field">
+            <label for="monto">Monto</label>
+            <div class="money-input" id="moneyWrap">
+              <span class="prefix" aria-hidden="true">$</span>
+              <input class="amount-input num" id="monto" type="text" inputmode="numeric" autocomplete="off" placeholder="0">
+            </div>
+          </div>
+          <div class="row-2">
+            <div class="field"><div class="label-row"><label for="categoria">Categoría</label><button type="button" class="link-btn" id="editCats">Editar</button></div><select id="categoria"></select></div>
+            <div class="field"><label for="cartera">Cartera</label><select id="cartera"></select></div>
+          </div>
+          <div class="field"><label for="fecha">Fecha</label><input id="fecha" type="date"></div>
+          <div class="field"><label for="descripcion">Descripción</label><input id="descripcion" type="text" maxlength="200" placeholder="Ej. Mercado de la semana"></div>
+          <div class="field">
+            <div class="label-row"><label for="tagInput">Etiquetas</label><button type="button" class="link-btn" id="editTags">Editar</button></div>
+            <div class="tag-box" id="tagBox"><input id="tagInput" type="text" maxlength="30" placeholder="Ej. Farmacia" autocomplete="off"></div>
+            <div class="tag-suggest" id="tagSuggest"></div>
+          </div>
+          <div class="field">
+            <label>Factura (opcional)</label>
+            <div class="receipt-actions">
+              <label class="btn ghost file-btn">📷 Tomar foto<input class="sr-only" type="file" accept="image/*" capture="environment" id="camInput"></label>
+              <label class="btn ghost file-btn">📁 Subir archivo<input class="sr-only" type="file" accept="image/*,application/pdf" id="fileInput"></label>
+            </div>
+            <div class="receipt-preview" id="receiptPreview" hidden></div>
+          </div>
+          <button class="btn" id="saveBtn" type="button">Guardar gasto</button>
+
+        </section>
+      </aside>
+
+      <section class="panel list-panel">
+        <h2>Movimientos</h2>
+        <div class="list-tools">
+          <div class="chips" id="typeChips" role="group" aria-label="Filtrar por tipo">
+            <button class="chip" data-filter="Todos" aria-pressed="true">Todos</button>
+            <button class="chip" data-filter="Ingreso" aria-pressed="false">Ingresos</button>
+            <button class="chip" data-filter="Gasto" aria-pressed="false">Gastos</button>
+          </div>
+          <input class="search" id="search" type="search" placeholder="Buscar" title="Busca por descripción, categoría o etiqueta" aria-label="Buscar">
+        </div>
+        <div id="txList"><div class="skeleton"></div><div class="skeleton" style="width:80%"></div><div class="skeleton" style="width:60%"></div></div>
+      </section>
+    </div>
+
+    <!-- Vista: Reportes -->
+    <div class="rep-grid" id="viewRep" hidden>
+      <section class="panel wide">
+        <div class="panel-head">
+          <div class="type-toggle" id="repType" role="group" aria-label="Tipo de reporte">
+            <button type="button" data-type="Gasto" aria-pressed="true">Gastos</button>
+            <button type="button" data-type="Ingreso" aria-pressed="false">Ingresos</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <label class="tag-filter"><span>Etiqueta</span><select id="tagFilter" aria-label="Filtrar por etiqueta"><option value="Todas">Todas</option></select></label>
+            <button class="filter-badge" id="catBadge" hidden></button>
+            <button class="btn ghost" id="sheetBtn" type="button">Descargar CSV</button>
+          </div>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><p>Total</p><strong class="num" id="kTotal">—</strong></div>
+          <div class="kpi"><p>Promedio diario</p><strong class="num" id="kAvg">—</strong></div>
+          <div class="kpi"><p>Movimientos</p><strong class="num" id="kCount">—</strong></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Por categoría</h2>
+        <div class="chart-box"><canvas id="catChart" aria-label="Gráfico por categoría"></canvas></div>
+        <table class="cat-table" id="catTable"></table>
+        <p class="note">Toca una categoría para filtrar los demás gráficos y el detalle.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Por cartera</h2>
+        <div class="chart-box"><canvas id="walletChart" aria-label="Gráfico por cartera"></canvas></div>
+      </section>
+
+      <section class="panel wide">
+        <h2>Por etiqueta</h2>
+        <div class="chart-box"><canvas id="tagChart" aria-label="Gráfico por etiqueta"></canvas></div>
+        <p class="note">Un movimiento con varias etiquetas suma en cada una de ellas.</p>
+      </section>
+
+      <section class="panel wide">
+        <h2 id="trendTitle">Evolución</h2>
+        <div class="chart-box tall"><canvas id="trendChart" aria-label="Gráfico de evolución"></canvas></div>
+      </section>
+
+      <section class="panel wide">
+        <h2>Detalle</h2>
+        <div id="repDetail"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Detalle de movimiento -->
+  <div class="modal-back" id="txModal" hidden>
+    <div class="modal tx-sheet" role="dialog" aria-modal="true" aria-labelledby="tdCat">
+      <div class="td-hero">
+        <div class="td-bar">
+          <button class="td-round" id="tdClose" type="button" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          <span class="td-spacer"></span>
+          <button class="td-pill" id="tdEdit" type="button" aria-pressed="false">Editar</button>
+          <button class="td-round del-btn" id="tdDelete" type="button" aria-label="Eliminar movimiento"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg><span class="label">Eliminar</span></button>
+        </div>
+        <div class="td-hero-body" id="tdHeroBody"></div>
+      </div>
+      <div class="modal-body td-body" id="tdBody"></div>
+      <div class="td-foot" id="tdFoot" hidden><button class="btn" id="tdSave" type="button">Guardar cambios</button></div>
+    </div>
+  </div>
+
+  <!-- Modal de carteras -->
+  <div class="modal-back" id="walletModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="wmTitle">
+      <div class="modal-head">
+        <button class="icon-btn back-btn" id="wmBack" aria-label="Volver" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <h2 id="wmTitle">Carteras</h2>
+        <button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <div id="wmList">
+          <div id="walletList"></div>
+          <button class="btn" id="newWalletBtn" type="button">+ Nueva cartera</button>
+        </div>
+        <div id="wmForm" hidden>
+          <div class="field">
+            <label for="wName">Nombre</label>
+            <div class="inline">
+              <button type="button" class="icon-cell" id="wIconBtn" aria-label="Elegir ícono"></button>
+              <input class="inline-input" id="wName" maxlength="30" placeholder="Ej. Visa Bancolombia" autocomplete="off" autocapitalize="sentences">
+            </div>
+          </div>
+          <div class="picker" id="wPicker" hidden>
+            <p>Ícono de la cartera</p>
+            <div class="icon-grid" id="wIconGrid"></div>
+            <div class="inline"><input class="inline-input" id="wCustomIcon" maxlength="16" placeholder="O pega cualquier emoji" autocomplete="off" aria-label="Emoji personalizado"><button class="btn ghost" id="wUseCustom" type="button">Usar</button></div>
+          </div>
+          <div class="row-2">
+            <div class="field"><label for="wType">Tipo</label><select id="wType"></select></div>
+            <div class="field"><label for="wInit">Saldo inicial</label><input id="wInit" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></div>
+          </div>
+          <p class="note" style="margin:-6px 0 14px">Saldo con el que empezó la cartera. En una tarjeta de crédito con deuda, escríbelo en negativo.</p>
+          <div class="field"><label>Color</label><div class="swatches" id="wColors"></div></div>
+          <button class="btn" id="saveWalletBtn" type="button">Crear cartera</button>
+          <div id="wShare"></div>
+          <div id="wDanger"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de categorías -->
+  <div class="modal-back" id="catModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cmTitle">
+      <div class="modal-head">
+        <h2 id="cmTitle">Categorías</h2>
+        <button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <div class="type-toggle" id="catType" role="group" aria-label="Tipo de categoría">
+          <button type="button" data-type="Gasto" aria-pressed="true">Gastos</button>
+          <button type="button" data-type="Ingreso" aria-pressed="false">Ingresos</button>
+        </div>
+        <p class="note" style="margin:0 0 4px">Toca Editar para cambiar el nombre o el ícono.</p>
+        <div id="catList"></div>
+        <div class="picker" id="picker" hidden>
+          <p id="pickerTitle">Elige un ícono</p>
+          <div class="icon-grid" id="iconGrid"></div>
+          <div class="inline"><input class="inline-input" id="customIcon" maxlength="16" placeholder="O pega cualquier emoji" autocomplete="off" aria-label="Emoji personalizado"><button class="btn ghost" id="useCustomIcon" type="button">Usar</button></div>
+        </div>
+        <h3>Nueva categoría</h3>
+        <div class="inline">
+          <button type="button" class="icon-cell" id="newIconBtn" aria-label="Elegir ícono">🏷️</button>
+          <input class="inline-input" id="catName" name="nf-cat-nueva" maxlength="30" placeholder="Ej. Mascotas" autocomplete="off" autocorrect="off" enterkeyhint="done" aria-label="Nombre de la categoría">
+          <button class="btn ghost" id="addCatBtn" type="button">Crear</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de etiquetas -->
+  <div class="modal-back" id="tagModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tmTitle">
+      <div class="modal-head">
+        <h2 id="tmTitle">Etiquetas</h2>
+        <button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <div id="tagList"></div>
+        <h3>Nueva etiqueta</h3>
+        <div class="inline"><input class="inline-input" id="newTagName" maxlength="30" placeholder="Ej. Prepagada" autocomplete="off" aria-label="Nombre de la etiqueta"><button class="btn ghost" id="addTagBtn" type="button">Crear</button></div>
+        <p class="note">Agrupan gastos de distintas categorías, por ejemplo "Farmacia" o "Viaje a Cartagena".</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de compartir -->
+  <div class="modal-back" id="shareModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="smTitle">
+      <div class="modal-head">
+        <h2 id="smTitle">Personas y cuenta</h2>
+        <button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="modal-body"><div id="shareBody"></div></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+
+  <script src="js/vendor/supabase.js"></script>
+  <script src="js/vendor/chart.umd.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/gate.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/pwa.js"></script>
+</body>
+</html>
