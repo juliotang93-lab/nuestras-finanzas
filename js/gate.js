@@ -50,7 +50,7 @@
   function deniedView(email) {
     show(`
       <p class="gate-lead">La cuenta <strong>${esc(email)}</strong> no tiene acceso a esta app.</p>
-      <p class="note">Pide al administrador que te agregue en «Personas y cuenta» y vuelve a entrar con esta misma cuenta.</p>
+      <p class="note">Pide a quien te invitó que te agregue a su espacio en «Personas y cuenta» y vuelve a entrar con esta misma cuenta.</p>
       <button class="btn ghost" id="gOut" type="button">Entrar con otra cuenta</button>`);
   }
   function setupView() {

@@ -1,7 +1,7 @@
 /* Nuestras Finanzas · Service worker
    Guarda la app en el teléfono para que abra al instante y sin internet.
    Nunca guarda datos financieros: las consultas a Supabase siempre van a la red. */
-const VERSION = 'nf-2.1.0';
+const VERSION = 'nf-2.1.1';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
   'js/config.js', 'js/data.js', 'js/gate.js', 'js/app.js', 'js/pwa.js',
@@ -26,10 +26,16 @@ self.addEventListener('fetch', e => {
   // Archivos de la app: primero la copia local, y se actualiza en segundo plano
   if (url.origin === location.origin) {
     if (url.search.includes('code=')) return; // regreso del inicio de sesión: siempre a la red
+    // La página principal: primero internet (para recibir siempre la versión publicada), sin conexión la copia
+    if (req.mode === 'navigate') {
+      e.respondWith(caches.open(VERSION).then(cache =>
+        fetch(req).then(res => { if (res.ok) cache.put('index.html', res.clone()); return res; })
+          .catch(() => cache.match('index.html'))));
+      return;
+    }
     e.respondWith(caches.open(VERSION).then(async cache => {
-      const key = req.mode === 'navigate' ? 'index.html' : req;
-      const hit = await cache.match(key, { ignoreSearch: req.mode === 'navigate' });
-      const net = fetch(req).then(res => { if (res.ok && req.mode !== 'navigate') cache.put(req, res.clone()); return res; }).catch(() => hit);
+      const hit = await cache.match(req);
+      const net = fetch(req).then(res => { if (res.ok) cache.put(req, res.clone()); return res; }).catch(() => hit);
       return hit || net;
     }));
     return;

@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.0.0';
+    const APP_VERSION = '2.1.0';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
@@ -22,6 +22,7 @@
       formType: 'Gasto', filter: 'Todos', query: '', limit: PAGE,
       repType: 'Gasto', repCat: null, newColor: WALLET_COLORS[0],
       me: '', owner: '', isAdmin: false, identified: true, appUrl: '', users: [], categoryList: [],
+      isSuper: false, spaces: [], spaceId: '', spaceName: '', members: [],
       catType: 'Gasto', pickerFor: null, newIcon: '🏷️', walletForm: null, wPicker: false,
       tagList: [], formTags: [], tag: 'Todas', receipt: null,
       detail: null,
@@ -472,6 +473,8 @@
       try {
         const res = await call('shareWallet', id, email);
         state.wallets = state.wallets.map(x => x.id === id ? res.wallet : x);
+        const em = email.toLowerCase();
+        if (!state.members.some(m => m.email === em)) { state.members.push({ email: em, role: 'member' }); state.users.push(em); }
         if (res.appUrl) state.appUrl = res.appUrl;
         renderWalletModal(); renderWallets();
         inviteLink(email, 'Cartera compartida con ' + email);
@@ -745,25 +748,61 @@
       try { await navigator.clipboard.writeText(text); toast(lead + 'Invitación copiada: pégala en WhatsApp o en un correo para ' + email); }
       catch (e) { toast(lead + 'Envíale este enlace: ' + NF.appUrl()); }
     }
+    function renderSpaceLabel() {
+      const el = $('spaceLabel'); if (!el) return;
+      el.textContent = state.spaceName || '';
+      el.hidden = !state.spaceName || (state.spaces.length < 2 && state.spaceName === 'Nuestras Finanzas');
+    }
     function renderShareModal() {
-      const who = `<p class="note" style="margin:0 0 12px">Conectado como <strong>${escapeHtml(state.me)}</strong>${state.isAdmin ? ' (administrador)' : ''}</p>`;
+      const role = state.isAdmin ? 'dueño de este espacio' : 'miembro de este espacio';
+      const who = `<p class="note" style="margin:0 0 12px">Conectado como <strong>${escapeHtml(state.me)}</strong> (${role})</p>`;
+      const spaceSel = state.spaces.length > 1 ? `<div class="field"><label for="spaceSelect">Espacio</label>
+          <select id="spaceSelect">${state.spaces.map(sp => `<option value="${escapeHtml(sp.id)}" ${sp.id === state.spaceId ? 'selected' : ''}>${escapeHtml(sp.nombre)}${sp.role === 'owner' ? ' (tuyo)' : ''}</option>`).join('')}</select></div>` : '';
+      const spaceName = state.isAdmin
+        ? `<div class="field"><label for="spaceNameInput">Nombre de este espacio</label>
+            <div class="inline"><input class="inline-input" id="spaceNameInput" maxlength="40" value="${escapeHtml(state.spaceName)}" autocomplete="off"><button class="btn ghost" id="renameSpaceBtn" type="button">Guardar</button></div></div>`
+        : `<p class="note" style="margin:0 0 12px">Espacio: <strong>${escapeHtml(state.spaceName)}</strong>${state.owner ? ', de ' + escapeHtml(state.owner) : ''}</p>`;
       const link = `<div class="field"><label for="appUrl">Enlace de la app</label>
           <div class="inline"><input class="inline-input" id="appUrl" readonly value="${escapeHtml(NF.appUrl())}"><button class="btn ghost" id="copyUrl" type="button">Copiar</button></div></div>`;
-      const out = `<div class="danger-zone"><p>¿Usas un teléfono compartido? Cierra sesión al terminar.</p><button class="btn ghost" id="signOutBtn" type="button">Cerrar sesión</button></div>`;
-      if (!state.isAdmin) {
-        $('shareBody').innerHTML = who + link + `<p class="note">Solo el administrador puede dar acceso a nuevas personas. Para compartir una de tus carteras con alguien que ya usa la app, ve a "+ Carteras", toca Editar y luego Compartir.</p>` + out;
-        return;
-      }
-      $('shareBody').innerHTML = who + link + `
-        <h3>Personas con acceso a la app</h3>
-        ${state.users.length ? state.users.map(e => `<div class="w-row"><div><strong>${escapeHtml(e)}</strong></div><div class="w-actions"><button class="btn ghost" data-resend="${escapeHtml(e)}" type="button">Invitar</button>${delButton('data-user', e)}</div></div>`).join('') : '<p class="note">Solo tú usas la app por ahora.</p>'}
-        <h3>Dar acceso</h3>
-        <div class="inline"><input class="inline-input" id="userEmail" type="email" placeholder="correo@gmail.com" autocomplete="off" aria-label="Correo"><button class="btn ghost" id="addUserBtn" type="button">Dar acceso</button></div>
-        <p class="note">Solo las cuentas de esta lista pueden entrar. Cada persona ve únicamente sus carteras y las que le compartan; la base de datos lo hace cumplir, no solo la app.</p>
+      const others = state.members.filter(m => m.email !== state.me);
+      const memberRow = m => `<div class="w-row"><div><strong>${escapeHtml(m.email)}</strong><small>${m.role === 'owner' ? 'Dueño del espacio' : 'Miembro'}</small></div>${
+        state.isAdmin && m.role !== 'owner' ? `<div class="w-actions"><button class="btn ghost" data-resend="${escapeHtml(m.email)}" type="button">Invitar</button>${delButton('data-user', m.email)}</div>` : ''}</div>`;
+      const members = `<h3>Personas en este espacio</h3>${others.length ? others.map(memberRow).join('') : '<p class="note">Solo tú estás en este espacio por ahora.</p>'}`;
+      const add = state.isAdmin ? `
+        <h3>Agregar a este espacio</h3>
+        <div class="inline"><input class="inline-input" id="userEmail" type="email" placeholder="correo@gmail.com" autocomplete="off" aria-label="Correo"><button class="btn ghost" id="addUserBtn" type="button">Agregar</button></div>
+        <p class="note">Podrá entrar con esa cuenta de Google, crear sus propias carteras y usar las categorías de este espacio. Solo verá sus carteras y las que le compartan.</p>
         <h3>Traer datos de Google Sheets</h3>
-        <p class="note" style="margin-top:0">En tu hoja, usa el menú <strong>Nuestras Finanzas > Exportar para la nueva app</strong>, descarga el archivo y elígelo aquí. Puedes repetirlo: no se duplica nada.</p>
-        <label class="btn ghost file-btn" id="importLabel">📥 Elegir archivo exportado<input class="sr-only" type="file" accept=".json,application/json" id="importFile"></label>
-        ${out}`;
+        <p class="note" style="margin-top:0">Ejecuta <strong>exportarParaNuevaApp</strong> en tu hoja, descarga el archivo y elígelo aquí. Se carga en este espacio y puedes repetirlo sin duplicar nada.</p>
+        <label class="btn ghost file-btn" id="importLabel">📥 Elegir archivo exportado<input class="sr-only" type="file" accept=".json,application/json" id="importFile"></label>`
+        : `<p class="note">Solo el dueño del espacio puede agregar personas. Para compartir una cartera tuya con alguien de este espacio, ve a "+ Carteras", toca Editar y luego Compartir.</p>`;
+      const superSec = state.isSuper ? `
+        <h3>Crear un espacio para otra persona</h3>
+        <p class="note" style="margin-top:0">La persona tendrá su propio espacio, separado del tuyo: sus carteras, categorías, etiquetas y su gente. Tú no verás sus datos ni ella los tuyos.</p>
+        <div class="field"><label for="newSpaceName">Nombre del espacio</label><input class="inline-input" id="newSpaceName" maxlength="40" placeholder="Ej. Casa de Pedro" autocomplete="off" style="width:100%"></div>
+        <div class="inline"><input class="inline-input" id="newSpaceOwner" type="email" placeholder="correo del dueño@gmail.com" autocomplete="off" aria-label="Correo del dueño"><button class="btn ghost" id="createSpaceBtn" type="button">Crear</button></div>` : '';
+      const out = `<div class="danger-zone"><p>¿Usas un teléfono compartido? Cierra sesión al terminar.</p><button class="btn ghost" id="signOutBtn" type="button">Cerrar sesión</button></div>`;
+      $('shareBody').innerHTML = who + spaceSel + spaceName + link + members + add + superSec + out;
+    }
+    async function renameSpace() {
+      try {
+        const nombre = await call('renameSpace', $('spaceNameInput').value);
+        state.spaceName = nombre;
+        const sp = state.spaces.find(x => x.id === state.spaceId); if (sp) sp.nombre = nombre;
+        renderSpaceLabel(); toast('Nombre del espacio actualizado');
+      } catch (err) { toast(err.message, true); }
+    }
+    async function createSpaceFor() {
+      const nombre = ($('newSpaceName').value || '').trim(), email = ($('newSpaceOwner').value || '').trim();
+      if (!nombre) { toast('Escribe un nombre para el espacio.', true); $('newSpaceName').focus(); return; }
+      if (!email) { toast('Escribe el correo de la persona.', true); $('newSpaceOwner').focus(); return; }
+      const btn = $('createSpaceBtn'); btn.disabled = true; btn.textContent = 'Creando…';
+      try {
+        await call('createSpaceFor', nombre, email);
+        $('newSpaceName').value = ''; $('newSpaceOwner').value = '';
+        inviteLink(email.toLowerCase(), 'Espacio "' + nombre + '" creado para ' + email.toLowerCase());
+      } catch (err) { toast(err.message, true); }
+      finally { btn.disabled = false; btn.textContent = 'Crear'; }
     }
     async function importFile(file) {
       const label = $('importLabel');
@@ -787,17 +826,17 @@
       $('addUserBtn').disabled = true;
       try {
         const res = await call('addUser', email);
-        if (!state.users.includes(res.email)) state.users.push(res.email);
-        renderShareModal();
-        inviteLink(res.email, 'Acceso dado a ' + res.email);
+        await load(true); renderShareModal();
+        inviteLink(res.email, res.email + ' agregado a este espacio');
       } catch (err) { toast(err.message, true); $('addUserBtn').disabled = false; }
     }
     async function resendInvite(email) { inviteLink(email); }
     async function removeUser(email) {
       await call('removeUser', email);
       state.users = state.users.filter(e => e !== email);
+      state.members = state.members.filter(m => m.email !== email);
       state.wallets.forEach(w => w.compartidaCon = w.compartidaCon.filter(e => e !== email));
-      renderShareModal(); toast('Acceso retirado a ' + email);
+      renderShareModal(); toast(email + ' ya no está en este espacio');
     }
 
     /* ---------- Datos ---------- */
@@ -809,7 +848,9 @@
         state.transactions = data.transactions;
         state.wallets = data.wallets;
         state.walletTypes = data.walletTypes;
-        Object.assign(state, { me: data.me, owner: data.owner, isAdmin: data.isAdmin, identified: data.identified, appUrl: data.appUrl, users: data.users });
+        Object.assign(state, { me: data.me, owner: data.owner, isAdmin: data.isAdmin, identified: data.identified, appUrl: data.appUrl, users: data.users,
+          isSuper: !!data.isSuper, spaces: data.spaces || [], spaceId: data.spaceId || '', spaceName: data.spaceName || '', members: data.members || [] });
+        renderSpaceLabel();
         const firstLoad = !state.categoryList.length;
         const prevCat = $('categoria').value;
         state.categoryList = data.categoryList;
@@ -1322,6 +1363,8 @@
     $('shareBtn').addEventListener('click', () => { renderShareModal(); openModal('shareModal'); });
     $('shareModal').addEventListener('click', e => {
       if (e.target.closest('#addUserBtn')) { addUser(); return; }
+      if (e.target.closest('#renameSpaceBtn')) { renameSpace(); return; }
+      if (e.target.closest('#createSpaceBtn')) { createSpaceFor(); return; }
       const rs = e.target.closest('[data-resend]');
       if (rs) { resendInvite(rs.dataset.resend); return; }
       if (e.target.closest('#signOutBtn')) { NF.auth.signOut().then(() => location.reload()); return; }
@@ -1336,7 +1379,11 @@
       if (del) armOrRun(del, () => removeUser(del.dataset.user));
     });
     $('shareModal').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'userEmail') addUser(); });
-    $('shareModal').addEventListener('change', e => { if (e.target.id === 'importFile' && e.target.files[0]) { importFile(e.target.files[0]); e.target.value = ''; } });
+    $('shareModal').addEventListener('change', e => {
+      if (e.target.id === 'importFile' && e.target.files[0]) { importFile(e.target.files[0]); e.target.value = ''; }
+      if (e.target.id === 'spaceSelect' && e.target.value !== state.spaceId) NF.api.switchSpace(e.target.value);
+    });
+    $('spaceLabel').addEventListener('click', () => { renderShareModal(); openModal('shareModal'); });
     document.addEventListener('keydown', e => {
       if (e.key !== 'Escape' || !anyModalOpen()) return;
       if (!$('txModal').hidden) closeTxDetail(); else closeModals();
@@ -1357,7 +1404,7 @@
 
     /* Arranque: primero la sesión, luego los datos */
     NF.gate.start(info => {
-      state.me = info.email; state.isAdmin = info.isAdmin;
+      state.me = info.email; state.isAdmin = info.isAdmin; state.isSuper = !!info.isSuper; state.spaceName = info.spaceName || '';
       const cached = NF.cache.read();
       if (cached) load(true, cached); else state.loading = true;
       load(!!cached);
