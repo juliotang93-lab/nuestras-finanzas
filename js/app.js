@@ -1495,6 +1495,26 @@
     window.addEventListener('online', () => { setNotice(''); syncAndLoad(); });
     window.addEventListener('offline', () => setNotice('Sin conexión: puedes seguir registrando movimientos; se enviarán solos cuando vuelva internet. Editar o borrar necesita conexión.'));
 
+    /* ---------- Teléfono: la barra inferior se oculta mientras hay una ventana abierta o el teclado está visible
+       (en iPhone, con el teclado abierto las barras fijas "flotan" y rebotan) ---------- */
+    const syncModalClass = () => document.documentElement.classList.toggle('modal-open', anyModalOpen());
+    new MutationObserver(syncModalClass).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+    let kbTimer = null;
+    const isTyping = el => el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|file|range|color)$/.test(el.type)));
+    document.addEventListener('focusin', e => { if (isTyping(e.target)) { clearTimeout(kbTimer); document.documentElement.classList.add('kb-open'); } });
+    document.addEventListener('focusout', () => { clearTimeout(kbTimer); kbTimer = setTimeout(() => { if (!isTyping(document.activeElement)) document.documentElement.classList.remove('kb-open'); }, 150); });
+    // Android: el teclado se puede cerrar sin salir del campo; se detecta porque la pantalla visible vuelve a su alto
+    if (window.visualViewport) {
+      let maxH = visualViewport.height, shrunk = false;
+      window.addEventListener('orientationchange', () => { maxH = 0; shrunk = false; });
+      visualViewport.addEventListener('resize', () => {
+        const h = visualViewport.height;
+        if (h > maxH) maxH = h;
+        if (h < maxH * 0.75) shrunk = true;
+        else if (shrunk && h > maxH * 0.9) { shrunk = false; document.documentElement.classList.remove('kb-open'); }
+      });
+    }
+
     /* ---------- Inicio ---------- */
     const savedTheme = store.get('finanzas-theme');
     applyTheme(savedTheme || 'light'); // modo día por defecto; el modo noche se activa con el botón 🌙

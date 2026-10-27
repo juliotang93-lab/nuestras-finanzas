@@ -575,3 +575,9 @@
     .tx-pending { color: #8A5A0B; font-weight: 700; }
     .tx-pending.err { color: var(--expense); }
     :root[data-theme="dark"] .tx-pending { color: #F6C26B; }
+    /* 2.2.3 · Teléfono: sin barra inferior con el teclado abierto o con una ventana abierta, y sin mover la página de fondo */
+    @media (max-width: 600px) {
+      html.kb-open .tabs, html.modal-open .tabs { display: none; }
+      html.modal-open, html.modal-open body { overflow: hidden; }
+      .modal-back { overscroll-behavior: contain; }
+    }
