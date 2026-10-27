@@ -594,3 +594,8 @@
       html, body { height: 100%; overflow: hidden; }
       .wrap { height: 100%; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
     }
+    /* 2.2.7 · iPhone instalado: usar el alto real de la pantalla (sin franja vacía debajo de la barra) */
+    @media (max-width: 600px) {
+      html.ios-full, html.ios-full body, html.ios-full .wrap { height: var(--app-h); }
+      html.ios-full .tabs { bottom: auto; top: var(--app-h); transform: translateY(-100%); }
+    }

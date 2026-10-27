@@ -1504,6 +1504,21 @@
     const isTyping = el => el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|file|range|color)$/.test(el.type)));
     document.addEventListener('focusin', e => { if (isTyping(e.target)) { clearTimeout(kbTimer); document.documentElement.classList.add('kb-open'); } });
     document.addEventListener('focusout', () => { clearTimeout(kbTimer); kbTimer = setTimeout(() => { if (!isTyping(document.activeElement)) document.documentElement.classList.remove('kb-open'); }, 150); });
+    /* iPhone instalado (pantalla completa): iOS a veces informa la pantalla más corta de lo que es (le resta la zona de la hora)
+       y deja una franja vacía debajo de la barra. Si pasa, se usa el alto real de la pantalla. */
+    function fixAppHeight() {
+      const root = document.documentElement;
+      if (navigator.standalone !== true || !document.documentElement.classList) return;
+      const landscape = window.matchMedia('(orientation: landscape)').matches;
+      const h = landscape ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+      const short = document.documentElement.classList.contains('kb-open') ? false : (h - window.innerHeight > 10 && h - window.innerHeight < 120);
+      root.classList.toggle('ios-full', short);
+      if (short) root.style.setProperty('--app-h', h + 'px'); else root.style.removeProperty('--app-h');
+    }
+    window.addEventListener('resize', () => setTimeout(fixAppHeight, 50));
+    window.addEventListener('orientationchange', () => setTimeout(fixAppHeight, 300));
+    fixAppHeight();
+
     // Android: el teclado se puede cerrar sin salir del campo; se detecta porque la pantalla visible vuelve a su alto
     if (window.visualViewport) {
       let maxH = visualViewport.height, shrunk = false;
