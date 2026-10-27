@@ -581,3 +581,10 @@
       html.modal-open, html.modal-open body { overflow: hidden; }
       .modal-back { overscroll-behavior: contain; }
     }
+    /* 2.2.5 · iPhone instalado: la app ocupa toda la pantalla (incluida la zona de la hora). Así iOS ya no
+       "acorta" la pantalla al cerrar el teclado, que era lo que dejaba flotando la barra inferior. */
+    .status-band { position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top); background: #2B37A3; z-index: 60; pointer-events: none; }
+    :root[data-theme="dark"] .status-band { background: #10151F; }
+    .wrap { padding-top: calc(env(safe-area-inset-top) + 20px); }
+    .gate { padding-top: calc(env(safe-area-inset-top) + 24px); }
+    @media (max-width: 600px) { .wrap { padding-top: calc(env(safe-area-inset-top) + 12px); } }
