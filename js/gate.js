@@ -62,6 +62,15 @@
     show(`<p class="gate-lead">${esc(text || 'Abriendo…')}</p><div class="skeleton"></div><div class="skeleton" style="width:70%"></div>`);
   }
 
+  // Sin internet: entra con el último acceso verificado en este teléfono
+  function tryOffline() {
+    if (started) return true;
+    const info = NF.auth.offline();
+    if (!info) return false;
+    hide(); started = true; onReady(Object.assign({ offline: true }, info));
+    return true;
+  }
+
   async function enter(session) {
     if (entering || started) return;
     entering = true;
@@ -72,6 +81,7 @@
       hide();
       if (!started) { started = true; onReady(info); }
     } catch (e) {
+      if ((e.offline || !navigator.onLine) && tryOffline()) return;
       loginView(); setMsg(e.message, true);
     } finally { entering = false; }
   }
@@ -117,8 +127,11 @@
         const session = await NF.auth.session();
         // Limpia el código de inicio de sesión de la dirección
         if (/[?&](code|error)=/.test(location.search)) history.replaceState(null, '', NF.appUrl());
-        if (session) enter(session); else loginView();
+        if (session) enter(session);
+        else if (tryOffline()) return; // hay sesión guardada pero no se pudo renovar (sin internet)
+        else loginView();
       } catch (e) {
+        if (tryOffline()) return;
         loginView(); setMsg(e.message, true);
       }
     }

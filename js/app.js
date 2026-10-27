@@ -170,10 +170,13 @@
         descripcion: $('descripcion').value.trim(), etiquetas: state.formTags.slice(),
         factura: state.receipt ? { name: state.receipt.name, mimeType: state.receipt.mimeType, data: state.receipt.data } : null
       };
+      const repeatSel = $('repeat').value;
+      if (!navigator.onLine) { saveOffline(payload, repeatSel); return; }
       state.saving = true;
       $('saveBtn').disabled = true; $('saveBtn').textContent = state.receipt ? 'Subiendo factura…' : 'Guardando…';
       try {
-        const tx = await call('addTransaction', payload);
+        payload.id = NF.uuid();
+        const tx = await NF.api.addTransaction(payload);
         state.transactions.push(tx);
         NF.api.notifyTx(tx.id);
         let label = state.formType === 'Gasto' ? 'Gasto guardado' : 'Ingreso guardado';
@@ -192,9 +195,82 @@
         toast(inRange(tx) && inWallet(tx) ? label : label + ' (fuera del filtro actual)');
         if (!isTouch()) $('monto').focus();
       } catch (err) {
+        if (err.offline) { state.saving = false; saveOffline(payload, repeatSel); return; }
         toast('No se pudo guardar: ' + err.message, true);
       } finally {
         state.saving = false; $('saveBtn').disabled = false; updateSaveLabel();
+      }
+    }
+
+    /* ---------- Movimientos guardados sin conexión ----------
+       Se guardan en este teléfono y se envían solos al volver internet (sin duplicarse). */
+    const queue = {
+      key: () => 'nf-cache-pendientes-' + state.me + '-' + (NF.ctx.spaceId || ''),
+      all() { try { return JSON.parse(localStorage.getItem(queue.key()) || '[]'); } catch (e) { return []; } },
+      save(list) { localStorage.setItem(queue.key(), JSON.stringify(list)); },
+      remove(id) { try { queue.save(queue.all().filter(x => x.payload.id !== id)); } catch (e) {} }
+    };
+    const pendingTx = it => ({ id: it.payload.id, fecha: it.payload.fecha, tipo: it.payload.tipo, categoria: it.payload.categoria, cartera: it.payload.cartera,
+      monto: it.payload.monto, descripcion: it.payload.descripcion || '', etiquetas: it.payload.etiquetas || [], creadoPor: state.me,
+      factura: '', facturaPath: '', recurringId: '', pendiente: true, errorEnvio: it.error || '' });
+    function mergePending() {
+      const have = new Set(state.transactions.map(t => t.id));
+      queue.all().forEach(it => { if (!have.has(it.payload.id)) state.transactions.push(pendingTx(it)); });
+    }
+    function saveOffline(payload, repeat) {
+      payload.id = payload.id || NF.uuid();
+      const item = { payload, repeat: repeat || '', at: new Date().toISOString() };
+      let note = '';
+      try { queue.save(queue.all().concat(item)); }
+      catch (e) {
+        // Sin espacio para la foto: se guarda el movimiento sin ella
+        if (!payload.factura) { toast('No se pudo guardar en este teléfono.', true); return; }
+        item.payload = Object.assign({}, payload, { factura: null });
+        try { queue.save(queue.all().concat(item)); note = ' (sin la foto: agrégala al volver internet)'; }
+        catch (e2) { toast('No se pudo guardar en este teléfono.', true); return; }
+      }
+      state.transactions.push(pendingTx(item));
+      store.set('finanzas-cartera', payload.cartera);
+      resetForm(); render();
+      toast('Guardado en este teléfono' + note + '. Se enviará solo cuando vuelva internet.');
+    }
+    let flushing = false;
+    async function flushQueue() {
+      if (flushing || !navigator.onLine || !state.me) return 0;
+      const list = queue.all();
+      if (!list.length) return 0;
+      flushing = true;
+      let sent = 0, failed = 0;
+      try {
+        for (const it of list) {
+          try {
+            const tx = await NF.api.addTransaction(it.payload);
+            NF.api.notifyTx(tx.id);
+            if (it.repeat) {
+              try { await NF.api.saveRecurring({ tipo: tx.tipo, categoria: tx.categoria, cartera: tx.cartera, monto: tx.monto, descripcion: tx.descripcion,
+                frecuencia: it.repeat, proxima: NFInsights.nextDate(tx.fecha, it.repeat) }); } catch (e) {}
+            }
+            queue.remove(it.payload.id); sent++;
+          } catch (e) {
+            if (e.offline) break; // se intenta de nuevo más tarde
+            failed++;
+            try { queue.save(queue.all().map(x => x.payload.id === it.payload.id ? Object.assign(x, { error: e.message }) : x)); } catch (e2) {}
+          }
+        }
+      } finally { flushing = false; }
+      if (sent) toast(sent === 1 ? 'Se envió 1 movimiento que guardaste sin conexión' : 'Se enviaron ' + sent + ' movimientos que guardaste sin conexión');
+      else if (failed) toast('Hay movimientos sin conexión que no se pudieron enviar. Tócalos para ver el motivo.', true);
+      return sent;
+    }
+    // Primero se traen los datos (para conocer carteras y categorías), luego se envían los pendientes
+    async function syncAndLoad() { await load(true); if (await flushQueue()) await load(true); }
+    function openPending(t) {
+      const msg = (t.errorEnvio ? 'No se pudo enviar: ' + t.errorEnvio + '\n\n' : 'Este movimiento está guardado en este teléfono y se enviará solo cuando vuelva internet.\n\n')
+        + '¿Quieres descartarlo?';
+      if (window.confirm(msg)) {
+        queue.remove(t.id);
+        state.transactions = state.transactions.filter(x => x.id !== t.id);
+        render(); toast('Movimiento descartado');
       }
     }
 
@@ -213,6 +289,7 @@
     function openTxDetail(id) {
       const t = state.transactions.find(x => x.id === id);
       if (!t) return;
+      if (t.pendiente) { openPending(t); return; }
       state.detail = {
         id, editing: false, receipt: null, removeFactura: false, confirmClose: false, saving: false,
         orig: t,
@@ -858,7 +935,8 @@
       try {
         const data = preset || await call('getData');
         if (!preset) NF.cache.write(data);
-        state.transactions = data.transactions;
+        state.transactions = data.transactions.slice();
+        mergePending();
         state.wallets = data.wallets;
         state.walletTypes = data.walletTypes;
         Object.assign(state, { me: data.me, owner: data.owner, isAdmin: data.isAdmin, identified: data.identified, appUrl: data.appUrl, users: data.users,
@@ -883,7 +961,7 @@
         const msg = String(err.message || '');
         if (/sesión expiró/i.test(msg)) { NF.auth.signOut().then(() => location.reload()); return; }
         setNotice(/conexión/i.test(msg) && state.transactions.length
-          ? 'Sin conexión: estás viendo los últimos datos guardados en este teléfono. Los cambios necesitan internet.'
+          ? 'Sin conexión: puedes seguir registrando movimientos; se enviarán solos cuando vuelva internet. Editar o borrar necesita conexión.'
           : 'No se pudieron cargar los datos. ' + escapeHtml(msg));
       } finally {
         state.loading = false;
@@ -983,6 +1061,7 @@
           <small class="tx-wallet"><i>${w ? walletIcon(w) : '❔'}</i>${escapeHtml(t.cartera || 'Sin asignar')}${t.creadoPor && t.creadoPor !== state.me ? ' · ' + escapeHtml(shortName(t.creadoPor)) : ''}</small>
           ${desc ? `<small>${escapeHtml(desc)}</small>` : ''}
           ${extras ? `<small class="tx-extras">${extras}</small>` : ''}
+          ${t.pendiente ? `<small class="tx-pending ${t.errorEnvio ? 'err' : ''}">${t.errorEnvio ? '⚠️ No se pudo enviar' : '⏳ Pendiente de enviar'}</small>` : ''}
         </span>
         <span class="tx-amount num ${t.tipo === 'Ingreso' ? 'in' : ''}">${sign}${money.format(t.monto)}</span>
       </div>`;
@@ -1411,10 +1490,10 @@
     });
     $('themeBtn').addEventListener('click', () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
     $('refreshBtn').addEventListener('click', () => load(true).then(() => toast('Datos actualizados')));
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && state.me) load(true); });
-    setInterval(() => { if (!document.hidden && !state.saving && !anyModalOpen()) load(true); }, 5 * 60000);
-    window.addEventListener('online', () => { setNotice(''); load(true); });
-    window.addEventListener('offline', () => setNotice('Sin conexión: estás viendo los últimos datos guardados en este teléfono. Los cambios necesitan internet.'));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && state.me) syncAndLoad(); });
+    setInterval(() => { if (!document.hidden && !state.saving && !anyModalOpen()) syncAndLoad(); }, 5 * 60000);
+    window.addEventListener('online', () => { setNotice(''); syncAndLoad(); });
+    window.addEventListener('offline', () => setNotice('Sin conexión: puedes seguir registrando movimientos; se enviarán solos cuando vuelva internet. Editar o borrar necesita conexión.'));
 
     /* ---------- Inicio ---------- */
     const savedTheme = store.get('finanzas-theme');
@@ -1438,10 +1517,17 @@
       if (qv) history.replaceState(null, '', location.pathname);
       const lastView = qv || store.get('finanzas-view');
       if (lastView && lastView !== 'mov') setView(lastView);
-      // Crea los pagos programados que ya vencieron antes de traer los datos
-      if (navigator.onLine) await NF.api.materialize();
-      load(!!cached);
       NF.subscribe(() => { if (!state.saving && !document.hidden) load(true); });
+      if (info.offline || !navigator.onLine) {
+        if (!cached) state.loading = false;
+        setNotice(cached ? 'Sin conexión: puedes seguir registrando movimientos; se enviarán solos cuando vuelva internet. Editar o borrar necesita conexión.' : 'Sin conexión y aún no hay datos guardados en este teléfono. Abre la app con internet al menos una vez.');
+        render();
+        if (!navigator.onLine) return; // al volver internet se envían los pendientes y se actualiza
+      }
+      // Envía lo guardado sin conexión y crea los pagos programados que ya vencieron antes de traer los datos
+      await NF.api.materialize();
+      await load(!!cached);
+      if (await flushQueue()) load(true);
     });
 
 })();

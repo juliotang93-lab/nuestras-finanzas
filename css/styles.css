@@ -571,3 +571,7 @@
       .tabs { background: var(--surface); }
       .tabs::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 160px; background: var(--surface); pointer-events: none; }
     }
+    /* 2.2.2 · Movimientos guardados sin conexión */
+    .tx-pending { color: #8A5A0B; font-weight: 700; }
+    .tx-pending.err { color: var(--expense); }
+    :root[data-theme="dark"] .tx-pending { color: #F6C26B; }

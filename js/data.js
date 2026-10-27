@@ -26,7 +26,7 @@
   function friendly(e, extra) {
     if (!e) return new Error('Error desconocido');
     const code = e.code || '', msg = String(e.message || e);
-    if (/Failed to fetch|NetworkError|Load failed|network/i.test(msg)) return new Error('Sin conexión a internet. Revisa tu conexión e inténtalo de nuevo.');
+    if (/Failed to fetch|NetworkError|Load failed|network/i.test(msg)) { const n = new Error('Sin conexión a internet. Revisa tu conexión e inténtalo de nuevo.'); n.offline = true; return n; }
     if (/JWT|session|refresh token/i.test(msg) || code === 'PGRST301') return new Error('Tu sesión expiró. Cierra sesión y vuelve a entrar.');
     if (code === '23505') return new Error((extra && extra.unique) || 'Ya existe un registro con ese nombre.');
     if (code === '23503') return new Error((extra && extra.fk) || 'No se puede: hay otros datos que dependen de este.');
@@ -294,9 +294,14 @@
     /* Movimientos */
     async addTransaction(p) {
       const { row, tagIds } = txRow(p);
-      const id = uuid();
-      await run(sb.from('transactions').insert(Object.assign({ id }, row)));
-      if (tagIds.length) await run(sb.from('transaction_tags').insert(tagIds.map(tag_id => ({ transaction_id: id, tag_id }))));
+      // p.id viene de los movimientos guardados sin conexión: si ya se había enviado, no se duplica
+      const id = p.id || uuid();
+      const ins = await sb.from('transactions').insert(Object.assign({ id }, row));
+      const existed = !!(ins.error && p.id && ins.error.code === '23505');
+      if (ins.error && !existed) throw friendly(ins.error);
+      const tagRows = tagIds.map(tag_id => ({ transaction_id: id, tag_id }));
+      if (tagRows.length) await run(existed ? sb.from('transaction_tags').upsert(tagRows, { onConflict: 'transaction_id,tag_id', ignoreDuplicates: true })
+        : sb.from('transaction_tags').insert(tagRows));
       if (p.factura && p.factura.data) {
         const path = await uploadReceipt(id, p.factura);
         await run(sb.from('transactions').update({ factura_path: path }).eq('id', id));
@@ -499,7 +504,20 @@
       try { saved = localStorage.getItem('nf-space-' + ctx.email) || ''; } catch (e) {}
       const cur = ctx.spaces.find(x => x.id === saved) || ctx.spaces[0];
       ctx.spaceId = cur ? cur.id : ''; ctx.spaceName = cur ? cur.nombre : ''; ctx.isOwner = !!(cur && cur.role === 'owner');
-      return { email: ctx.email, allowed: ctx.spaces.length > 0, isAdmin: ctx.isOwner, isSuper: ctx.isAdmin, spaceName: ctx.spaceName };
+      const info = { email: ctx.email, allowed: ctx.spaces.length > 0, isAdmin: ctx.isOwner, isSuper: ctx.isAdmin, spaceName: ctx.spaceName };
+      // Se recuerda para poder abrir la app sin internet (se borra al cerrar sesión)
+      if (info.allowed) { try { localStorage.setItem('nf-cache-acceso', JSON.stringify({ ctx, info })); } catch (e) {} }
+      return info;
+    },
+    /* Abrir sin internet: usa el último acceso verificado, solo si la sesión sigue guardada en este teléfono */
+    offline() {
+      try {
+        const hasSession = Object.keys(localStorage).some(k => /^sb-.*-auth-token$/.test(k));
+        const saved = JSON.parse(localStorage.getItem('nf-cache-acceso') || 'null');
+        if (!hasSession || !saved || !saved.info || !saved.info.allowed) return null;
+        Object.assign(ctx, saved.ctx);
+        return saved.info;
+      } catch (e) { return null; }
     },
     onChange(cb) { sb.auth.onAuthStateChange((event, session) => cb(event, session)); }
   };
@@ -524,5 +542,5 @@
     return () => sb.removeChannel(ch);
   }
 
-  window.NF = { api, auth, cache, subscribe, ctx, appUrl };
+  window.NF = { api, auth, cache, subscribe, ctx, appUrl, uuid };
 })();
