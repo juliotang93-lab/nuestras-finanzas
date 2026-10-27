@@ -1503,6 +1503,31 @@
     const isTyping = el => el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|file|range|color)$/.test(el.type)));
     document.addEventListener('focusin', e => { if (isTyping(e.target)) { clearTimeout(kbTimer); document.documentElement.classList.add('kb-open'); } });
     document.addEventListener('focusout', () => { clearTimeout(kbTimer); kbTimer = setTimeout(() => { if (!isTyping(document.activeElement)) document.documentElement.classList.remove('kb-open'); }, 150); });
+    /* iPhone: al cerrar el teclado, iOS a veces deja la pantalla "corta" y la barra inferior queda flotando.
+       Por eso la barra se ubica según la parte realmente visible de la pantalla (visualViewport). */
+    const phone = window.matchMedia('(max-width: 600px)');
+    let barFrame = 0;
+    function placeTabs() {
+      cancelAnimationFrame(barFrame);
+      barFrame = requestAnimationFrame(() => {
+        const tabs = document.querySelector('.tabs'), vv = window.visualViewport;
+        if (!tabs) return;
+        if (!vv || !phone.matches) { tabs.style.top = tabs.style.bottom = tabs.style.transform = ''; return; }
+        tabs.style.top = Math.round(vv.offsetTop + vv.height) + 'px';
+        tabs.style.bottom = 'auto';
+        tabs.style.transform = 'translateY(-100%)';
+      });
+    }
+    if (window.visualViewport) {
+      visualViewport.addEventListener('resize', placeTabs);
+      visualViewport.addEventListener('scroll', placeTabs);
+    }
+    window.addEventListener('resize', placeTabs);
+    window.addEventListener('orientationchange', () => setTimeout(placeTabs, 300));
+    if (phone.addEventListener) phone.addEventListener('change', placeTabs);
+    document.addEventListener('focusout', () => setTimeout(() => { placeTabs(); window.scrollTo(window.scrollX, window.scrollY); }, 300));
+    placeTabs();
+
     // Android: el teclado se puede cerrar sin salir del campo; se detecta porque la pantalla visible vuelve a su alto
     if (window.visualViewport) {
       let maxH = visualViewport.height, shrunk = false;

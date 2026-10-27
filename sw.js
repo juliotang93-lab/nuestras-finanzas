@@ -1,7 +1,7 @@
 /* Nuestras Finanzas · Service worker
    Guarda la app en el teléfono para que abra al instante y sin internet.
    Nunca guarda datos financieros: las consultas a Supabase siempre van a la red. */
-const VERSION = 'nf-2.2.3';
+const VERSION = 'nf-2.2.4';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
   'js/config.js', 'js/data.js', 'js/gate.js', 'js/insights.js', 'js/app.js', 'js/modules.js', 'js/pwa.js',
