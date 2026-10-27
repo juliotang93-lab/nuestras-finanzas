@@ -32,12 +32,19 @@
   <div class="wrap">
     <header class="topbar">
       <div class="brand"><svg class="logo" viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="lgbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4C5CE0"/><stop offset="1" stop-color="#2B37A3"/></linearGradient></defs><rect width="512" height="512" rx="114" fill="url(#lgbg)"/><circle cx="204" cy="282" r="118" fill="#fff"/><circle cx="204" cy="282" r="88" fill="none" stroke="#DCE1F5" stroke-width="10"/><circle cx="312" cy="226" r="118" fill="#3FCB9F" stroke="#3743B8" stroke-width="18"/><path d="M312 288C312 288 252 252 252 214C252 192 270 178 288 178C300 178 308 185 312 194C316 185 324 178 336 178C354 178 372 192 372 214C372 252 312 288 312 288Z" fill="#fff"/></svg><span class="brand-text"><span>Nuestras finanzas</span><button type="button" class="space-label" id="spaceLabel" hidden></button></span></div>
-      <div class="tabs" role="tablist">
-        <button role="tab" data-view="mov" aria-selected="true">Movimientos</button>
-        <button role="tab" data-view="rep" aria-selected="false">Reportes</button>
-      </div>
+      <nav class="tabs" role="tablist" aria-label="Secciones">
+        <button role="tab" data-view="mov" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span class="t-long">Movimientos</span><span class="t-short">Inicio</span></button>
+        <button role="tab" data-view="bud" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10h18M7 15h4"/><path d="M7 6V4.5M17 6V4.5"/></svg><span class="t-long">Presupuestos</span><span class="t-short">Presup.</span></button>
+        <button role="tab" data-view="ana" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16"/><path d="m7 14 4-4 3 3 5-6"/></svg><span class="t-long">Análisis</span><span class="t-short">Análisis</span></button>
+        <button role="tab" data-view="goal" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg><span class="t-long">Metas</span><span class="t-short">Metas</span></button>
+        <button role="tab" data-view="rep" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg><span class="t-long">Reportes</span><span class="t-short">Reportes</span></button>
+      </nav>
       <button class="icon-btn" id="refreshBtn" aria-label="Actualizar datos" title="Actualizar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+      </button>
+      <button class="icon-btn bell-btn" id="bellBtn" aria-label="Alertas" title="Alertas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span class="bell-badge" id="bellBadge" hidden>0</span>
       </button>
       <button class="icon-btn" id="shareBtn" aria-label="Personas y cuenta" title="Personas y cuenta">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M17 11v6M14 14h6"/></svg>
@@ -109,6 +116,16 @@
             <div class="label-row"><label for="tagInput">Etiquetas</label><button type="button" class="link-btn" id="editTags">Editar</button></div>
             <div class="tag-box" id="tagBox"><input id="tagInput" type="text" maxlength="30" placeholder="Ej. Farmacia" autocomplete="off"></div>
             <div class="tag-suggest" id="tagSuggest"></div>
+          </div>
+          <div class="field">
+            <label for="repeat">Repetir</label>
+            <select id="repeat">
+              <option value="">No se repite</option>
+              <option value="mensual">Cada mes</option>
+              <option value="quincenal">Cada 15 días</option>
+              <option value="semanal">Cada semana</option>
+              <option value="anual">Cada año</option>
+            </select>
           </div>
           <div class="field">
             <label>Factura (opcional)</label>
@@ -186,6 +203,13 @@
         <div id="repDetail"></div>
       </section>
     </div>
+
+    <!-- Vista: Presupuestos -->
+    <div class="mod-view" id="viewBud" hidden></div>
+    <!-- Vista: Análisis -->
+    <div class="mod-view" id="viewAna" hidden></div>
+    <!-- Vista: Metas -->
+    <div class="mod-view" id="viewGoal" hidden></div>
   </div>
 
   <!-- Detalle de movimiento -->
@@ -301,6 +325,31 @@
     </div>
   </div>
 
+  <!-- Ventanas de las secciones nuevas -->
+  <div class="modal-back" id="alertModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="alTitle">
+      <div class="modal-head"><h2 id="alTitle">Alertas</h2><button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="modal-body" id="alertBody"></div>
+    </div>
+  </div>
+  <div class="modal-back" id="budModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bmTitle">
+      <div class="modal-head"><h2 id="bmTitle">Presupuesto</h2><button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="modal-body" id="budBody"></div>
+    </div>
+  </div>
+  <div class="modal-back" id="goalModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="gmTitle">
+      <div class="modal-head"><h2 id="gmTitle">Meta de ahorro</h2><button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="modal-body" id="goalBody"></div>
+    </div>
+  </div>
+  <div class="modal-back" id="recModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rmTitle">
+      <div class="modal-head"><h2 id="rmTitle">Pago programado</h2><button class="icon-btn" data-close aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="modal-body" id="recBody"></div>
+    </div>
+  </div>
   <div class="toast" id="toast" role="status"></div>
 
 
@@ -309,7 +358,9 @@
   <script src="js/config.js"></script>
   <script src="js/data.js"></script>
   <script src="js/gate.js"></script>
+  <script src="js/insights.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/modules.js"></script>
   <script src="js/pwa.js"></script>
 </body>
 </html>

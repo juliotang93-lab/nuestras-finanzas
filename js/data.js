@@ -64,7 +64,18 @@
   }
   const validColor = (c, d) => /^#[0-9a-f]{6}$/i.test(String(c)) ? String(c) : d;
 
+  // Tablas de la 2.2: si aún no se ejecutó el SQL nuevo, la app sigue funcionando sin ellas
+  async function optional(promise, fallback) {
+    try { return await promise; } catch (e) { return fallback === undefined ? [] : fallback; }
+  }
+
   /* ---------- Conversión a los objetos que usa la interfaz ---------- */
+  const mapBudget = b => ({ id: b.id, categoria: b.category_id ? (idx.catById[b.category_id] || {}).nombre || null : null, monto: Number(b.monto) || 0 });
+  const mapGoal = g => ({ id: g.id, nombre: g.nombre, icono: g.icono, monto: Number(g.monto_objetivo) || 0, fecha: g.fecha_objetivo || '',
+    compartida: g.compartida, creadaPor: g.creada_por, creada: String(g.created_at || '').slice(0, 10),
+    canEdit: g.creada_por === ctx.email, canDelete: g.creada_por === ctx.email || ctx.isOwner });
+  const mapRecurring = r => ({ id: r.id, tipo: r.tipo, categoria: (idx.catById[r.category_id] || {}).nombre || '', cartera: (idx.walletById[r.wallet_id] || {}).nombre || '',
+    monto: Number(r.monto) || 0, descripcion: r.descripcion || '', frecuencia: r.frecuencia, proxima: r.proxima, activa: r.activa, creadoPor: r.creado_por });
   const mapWallet = w => ({
     id: w.id, nombre: w.nombre, tipo: w.tipo, saldoInicial: Number(w.saldo_inicial) || 0, color: w.color, icono: w.icono,
     propietario: w.propietario, compartidaCon: (idx.members[w.id] || []).slice(),
@@ -79,7 +90,7 @@
       descripcion: t.descripcion || '', cartera: w ? w.nombre : '', creadoPor: t.creado_por || '',
       etiquetas: (tagIds || []).map(id => idx.tagById[id] && idx.tagById[id].nombre).filter(Boolean),
       factura: (t.factura_path && urls && urls[t.factura_path]) || t.factura_url || '',
-      facturaPath: t.factura_path || ''
+      facturaPath: t.factura_path || '', recurringId: t.recurring_id || ''
     };
   }
   function rebuildIndex(wallets, members, cats, tags) {
@@ -145,17 +156,22 @@
       const S = ctx.spaceId;
       if (!S) throw new Error('No perteneces a ningún espacio.');
       const bySpace = q => q.eq('space_id', S);
-      const [wallets, members, cats, tags] = await Promise.all([
+      const [wallets, members, cats, tags, budgets, goals, prefs] = await Promise.all([
         fetchAll('wallets', '*', 'created_at', bySpace),
         fetchAll('space_members', 'email, role, created_at', 'created_at', bySpace),
         fetchAll('categories', '*', 'created_at', bySpace),
-        fetchAll('tags', '*', 'created_at', bySpace)
+        fetchAll('tags', '*', 'created_at', bySpace),
+        optional(fetchAll('budgets', '*', 'created_at', q => q.eq('space_id', S).eq('email', ctx.email))),
+        optional(fetchAll('goals', '*', 'created_at', bySpace)),
+        optional(run(sb.from('user_prefs').select('*').eq('email', ctx.email).maybeSingle()), null)
       ]);
-      const ids = wallets.map(w => w.id);
-      const [walletMembers, txs] = ids.length ? await Promise.all([
-        fetchAll('wallet_members', '*', null, q => q.in('wallet_id', ids)),
-        fetchAll('transactions', '*, transaction_tags(tag_id)', 'fecha', q => q.in('wallet_id', ids))
-      ]) : [[], []];
+      const ids = wallets.map(w => w.id), goalIds = goals.map(g => g.id);
+      const [walletMembers, txs, recurring, contributions] = await Promise.all([
+        ids.length ? fetchAll('wallet_members', '*', null, q => q.in('wallet_id', ids)) : [],
+        ids.length ? fetchAll('transactions', '*, transaction_tags(tag_id)', 'fecha', q => q.in('wallet_id', ids)) : [],
+        ids.length ? optional(fetchAll('recurring', '*', 'proxima', q => q.in('wallet_id', ids))) : [],
+        goalIds.length ? optional(fetchAll('goal_contributions', '*', 'fecha', q => q.in('goal_id', goalIds))) : []
+      ]);
       rebuildIndex(wallets, walletMembers, cats, tags);
       const urls = await signedUrls(txs.map(t => t.factura_path));
       const sp = ctx.spaces.find(x => x.id === S);
@@ -169,8 +185,110 @@
         categoryList: cats.map(mapCat),
         tagList: tags.map(mapTag),
         walletTypes: WALLET_TYPES,
-        users: members.map(m => m.email).filter(e => e !== ctx.email)
+        users: members.map(m => m.email).filter(e => e !== ctx.email),
+        budgets: budgets.map(mapBudget),
+        goals: goals.map(mapGoal),
+        contributions: contributions.map(c => ({ id: c.id, goalId: c.goal_id, monto: Number(c.monto) || 0, fecha: c.fecha, nota: c.nota || '', email: c.email })),
+        recurring: recurring.map(mapRecurring),
+        prefs: {
+          presupuestos: prefs ? prefs.notif_presupuestos : true, movimientos: prefs ? prefs.notif_movimientos : true,
+          recordatorios: prefs ? prefs.notif_recordatorios : true, resumen: prefs ? prefs.notif_resumen : true
+        }
       };
+    },
+
+    /* Presupuestos (de cada persona) */
+    async saveBudget(p) {
+      const monto = Math.round(Number(p.monto) * 100) / 100;
+      if (!isFinite(monto) || monto <= 0) throw new Error('Escribe un monto mayor que 0.');
+      const cat = p.categoria ? idx.catByKey['Gasto|' + p.categoria] : null;
+      if (p.categoria && !cat) throw new Error('Elige una categoría de gasto.');
+      if (p.id) {
+        await run(sb.from('budgets').update({ monto }).eq('id', p.id));
+        return true;
+      }
+      await run(sb.from('budgets').insert({ id: uuid(), space_id: ctx.spaceId, category_id: cat ? cat.id : null, monto }),
+        { unique: p.categoria ? 'Ya tienes un presupuesto para ' + p.categoria + '.' : 'Ya tienes un presupuesto total.' });
+      return true;
+    },
+    async deleteBudget(id) { await run(sb.from('budgets').delete().eq('id', id)); return true; },
+
+    /* Metas de ahorro */
+    async saveGoal(p) {
+      const nombre = clean(p.nombre, 60);
+      if (!nombre || nombre.length > 40) throw new Error('El nombre de la meta debe tener entre 1 y 40 caracteres.');
+      const monto = Math.round(Number(p.monto) * 100) / 100;
+      if (!isFinite(monto) || monto <= 0) throw new Error('Escribe cuánto quieres ahorrar.');
+      if (p.fecha && !/^\d{4}-\d{2}-\d{2}$/.test(p.fecha)) throw new Error('Fecha inválida.');
+      const row = { nombre, icono: validIcon(p.icono || '🎯'), monto_objetivo: monto, fecha_objetivo: p.fecha || null, compartida: p.compartida !== false };
+      if (p.id) await run(sb.from('goals').update(row).eq('id', p.id), { rls: 'Solo quien creó la meta puede editarla.' });
+      else await run(sb.from('goals').insert(Object.assign({ id: uuid(), space_id: ctx.spaceId }, row)));
+      return true;
+    },
+    async deleteGoal(id) { await run(sb.from('goals').delete().eq('id', id), { rls: 'Solo quien creó la meta o el dueño del espacio pueden eliminarla.' }); return true; },
+    async addContribution(goalId, monto, nota) {
+      monto = Math.round(Number(monto) * 100) / 100;
+      if (!isFinite(monto) || monto === 0) throw new Error('Escribe un monto.');
+      await run(sb.from('goal_contributions').insert({ id: uuid(), goal_id: goalId, monto, nota: clean(nota, 100) }));
+      return true;
+    },
+    async deleteContribution(id) { await run(sb.from('goal_contributions').delete().eq('id', id)); return true; },
+
+    /* Pagos y cobros programados */
+    async saveRecurring(p) {
+      const tipo = p.tipo === 'Ingreso' ? 'Ingreso' : 'Gasto';
+      const cat = idx.catByKey[tipo + '|' + p.categoria], w = idx.walletByName[p.cartera];
+      if (!cat) throw new Error('Elige una categoría válida.');
+      if (!w) throw new Error('Elige una cartera.');
+      const monto = Math.round(Number(p.monto) * 100) / 100;
+      if (!isFinite(monto) || monto <= 0) throw new Error('El monto debe ser mayor que 0.');
+      if (!['semanal', 'quincenal', 'mensual', 'anual'].includes(p.frecuencia)) throw new Error('Elige cada cuánto se repite.');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p.proxima))) throw new Error('Elige la fecha del próximo pago.');
+      const row = { tipo, category_id: cat.id, wallet_id: w.id, monto, descripcion: clean(p.descripcion, 200), frecuencia: p.frecuencia, proxima: p.proxima, activa: p.activa !== false };
+      if (p.id) await run(sb.from('recurring').update(row).eq('id', p.id));
+      else await run(sb.from('recurring').insert(Object.assign({ id: uuid() }, row)));
+      return true;
+    },
+    async setRecurringActive(id, activa) { await run(sb.from('recurring').update({ activa: !!activa }).eq('id', id)); return true; },
+    async deleteRecurring(id) { await run(sb.from('recurring').delete().eq('id', id)); return true; },
+    /* Crea los movimientos programados que ya vencieron */
+    async materialize() {
+      try { return await run(sb.rpc('materialize_recurring')); } catch (e) { return 0; }
+    },
+
+    /* Notificaciones */
+    async savePrefs(p) {
+      await run(sb.from('user_prefs').upsert({ email: ctx.email, notif_presupuestos: !!p.presupuestos, notif_movimientos: !!p.movimientos,
+        notif_recordatorios: !!p.recordatorios, notif_resumen: !!p.resumen, updated_at: new Date().toISOString() }, { onConflict: 'email' }));
+      return true;
+    },
+    async pushPublicKey() {
+      const { data, error } = await sb.functions.invoke('notificar', { body: { type: 'key' } });
+      if (error || !data || !data.publicKey) throw new Error('Las notificaciones aún no están configuradas en el servidor (falta la función "notificar" o sus claves).');
+      try { localStorage.removeItem('nf-sin-notificar'); } catch (e) {}
+      return data.publicKey;
+    },
+    async savePushSubscription(sub) {
+      const j = sub.toJSON();
+      await run(sb.rpc('save_push_subscription', { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth, p_ua: navigator.userAgent }));
+      return true;
+    },
+    async deletePushSubscription(endpoint) { try { await run(sb.rpc('delete_push_subscription', { p_endpoint: endpoint })); } catch (e) {} return true; },
+    async testPush() {
+      const { data, error } = await sb.functions.invoke('notificar', { body: { type: 'test' } });
+      if (error) throw new Error('No se pudo enviar la prueba. Revisa que la función "notificar" esté publicada.');
+      return data || {};
+    },
+    /* Avisa a la función de notificaciones de un movimiento nuevo (no detiene nada si falla) */
+    notifyTx(id) {
+      if (!navigator.onLine) return;
+      // Si la función aún no está publicada, no se vuelve a intentar durante un día
+      let off = 0; try { off = Number(localStorage.getItem('nf-sin-notificar')) || 0; } catch (e) {}
+      if (off > Date.now()) return;
+      sb.functions.invoke('notificar', { body: { type: 'tx', id } }).then(r => {
+        const st = r && r.error && r.error.context && r.error.context.status;
+        if (st === 404 || (r && r.error && !st)) { try { localStorage.setItem('nf-sin-notificar', String(Date.now() + 864e5)); } catch (e) {} }
+      }).catch(() => {});
     },
 
     /* Movimientos */
@@ -399,7 +517,8 @@
     let t = null;
     const fire = () => { clearTimeout(t); t = setTimeout(onChange, 600); };
     const ch = sb.channel('nf-cambios');
-    ['spaces', 'space_members', 'wallets', 'wallet_members', 'categories', 'tags', 'transactions', 'transaction_tags'].forEach(table =>
+    ['spaces', 'space_members', 'wallets', 'wallet_members', 'categories', 'tags', 'transactions', 'transaction_tags',
+     'budgets', 'goals', 'goal_contributions', 'recurring'].forEach(table =>
       ch.on('postgres_changes', { event: '*', schema: 'public', table }, fire));
     ch.subscribe();
     return () => sb.removeChannel(ch);

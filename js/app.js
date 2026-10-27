@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.1.0';
+    const APP_VERSION = '2.2.0';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
@@ -26,6 +26,7 @@
       catType: 'Gasto', pickerFor: null, newIcon: '🏷️', walletForm: null, wPicker: false,
       tagList: [], formTags: [], tag: 'Todas', receipt: null,
       detail: null,
+      budgets: [], goals: [], contributions: [], recurring: [], prefs: {},
       loading: true, saving: false
     };
     const charts = {};
@@ -122,6 +123,7 @@
       $('themeBtn').innerHTML = theme === 'dark' ? SUN : MOON;
       store.set('finanzas-theme', theme);
       if (state.view === 'rep') renderReports();
+      else if (state.view === 'ana' && window.NFModules) NFModules.render('ana');
     }
 
     /* ---------- Saldos ---------- */
@@ -173,7 +175,17 @@
       try {
         const tx = await call('addTransaction', payload);
         state.transactions.push(tx);
-        const label = state.formType === 'Gasto' ? 'Gasto guardado' : 'Ingreso guardado';
+        NF.api.notifyTx(tx.id);
+        let label = state.formType === 'Gasto' ? 'Gasto guardado' : 'Ingreso guardado';
+        const repeat = $('repeat').value;
+        if (repeat) {
+          try {
+            await call('saveRecurring', { tipo: tx.tipo, categoria: tx.categoria, cartera: tx.cartera, monto: tx.monto, descripcion: tx.descripcion,
+              frecuencia: repeat, proxima: NFInsights.nextDate(tx.fecha, repeat) });
+            label += ' y programado';
+            load(true);
+          } catch (e) { toast('Se guardó, pero no se pudo programar: ' + e.message, true); }
+        }
         store.set('finanzas-cartera', tx.cartera);
         resetForm();
         render();
@@ -189,6 +201,7 @@
     function resetForm() {
       $('monto').value = ''; $('descripcion').value = ''; $('moneyWrap').classList.remove('filled');
       $('fecha').value = iso(new Date());
+      if ($('repeat')) $('repeat').value = '';
       state.formTags = []; state.receipt = null; renderTagPicker(); renderReceipt();
       updateSaveLabel();
     }
@@ -849,7 +862,8 @@
         state.wallets = data.wallets;
         state.walletTypes = data.walletTypes;
         Object.assign(state, { me: data.me, owner: data.owner, isAdmin: data.isAdmin, identified: data.identified, appUrl: data.appUrl, users: data.users,
-          isSuper: !!data.isSuper, spaces: data.spaces || [], spaceId: data.spaceId || '', spaceName: data.spaceName || '', members: data.members || [] });
+          isSuper: !!data.isSuper, spaces: data.spaces || [], spaceId: data.spaceId || '', spaceName: data.spaceName || '', members: data.members || [],
+          budgets: data.budgets || [], goals: data.goals || [], contributions: data.contributions || [], recurring: data.recurring || [], prefs: data.prefs || {} });
         renderSpaceLabel();
         const firstLoad = !state.categoryList.length;
         const prevCat = $('categoria').value;
@@ -884,7 +898,10 @@
       renderWallets();
       renderSummary();
       fillWalletSelect();
-      if (state.view === 'mov') renderList(); else renderReports();
+      if (state.view === 'mov') renderList();
+      else if (state.view === 'rep') renderReports();
+      else if (window.NFModules) NFModules.render(state.view);
+      if (window.NFModules) NFModules.renderBell();
     }
 
     function renderWallets() {
@@ -1134,12 +1151,16 @@
 
     function toggleCat(c) { state.repCat = state.repCat === c ? null : c; renderReports(); }
 
+    const VIEWS = { mov: 'viewMov', rep: 'viewRep', bud: 'viewBud', ana: 'viewAna', goal: 'viewGoal' };
     function setView(v) {
+      if (!VIEWS[v]) v = 'mov';
       state.view = v;
+      document.body.dataset.view = v;
       document.querySelectorAll('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.view === v)));
-      $('viewMov').hidden = v !== 'mov';
-      $('viewRep').hidden = v !== 'rep';
+      Object.keys(VIEWS).forEach(k => { $(VIEWS[k]).hidden = k !== v; });
+      store.set('finanzas-view', v);
       render();
+      window.scrollTo({ top: 0 });
     }
 
     /* Exporta a CSV lo que muestra Reportes (abre bien en Excel y Google Sheets) */
@@ -1402,11 +1423,23 @@
     $('fecha').value = iso(new Date());
     render();
 
+    /* Herramientas que usan las secciones de Presupuestos, Análisis, Metas y Alertas (js/modules.js) */
+    window.NFUI = { state, $, money, escapeHtml, iconFor, catColor, call, toast, openModal, closeModals, load, render, setView,
+      walletIcon, walletOf, iso, parseISO, fmtDate, ICONS, CHART_COLORS, cssVar, delButton, armOrRun, resetDel, isTouch,
+      formatAmountInput, parseAmount, openTxDetail, buildChart, txRow, store };
+    document.body.dataset.view = 'mov';
+
     /* Arranque: primero la sesión, luego los datos */
-    NF.gate.start(info => {
+    NF.gate.start(async info => {
       state.me = info.email; state.isAdmin = info.isAdmin; state.isSuper = !!info.isSuper; state.spaceName = info.spaceName || '';
       const cached = NF.cache.read();
       if (cached) load(true, cached); else state.loading = true;
+      const qv = new URLSearchParams(location.search).get('v');
+      if (qv) history.replaceState(null, '', location.pathname);
+      const lastView = qv || store.get('finanzas-view');
+      if (lastView && lastView !== 'mov') setView(lastView);
+      // Crea los pagos programados que ya vencieron antes de traer los datos
+      if (navigator.onLine) await NF.api.materialize();
       load(!!cached);
       NF.subscribe(() => { if (!state.saving && !document.hidden) load(true); });
     });
