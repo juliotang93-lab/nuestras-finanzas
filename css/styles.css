@@ -565,3 +565,9 @@
       .kpi strong { font-size: 17px; }
     }
     .bud-main .link-btn { text-align: left; }
+    /* 2.2.1 · iPhone: evita que la barra inferior "flote" con el rebote al llegar al final o al inicio */
+    @media (max-width: 600px) {
+      html, body { overscroll-behavior-y: none; }
+      .tabs { background: var(--surface); }
+      .tabs::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 160px; background: var(--surface); pointer-events: none; }
+    }
