@@ -588,3 +588,9 @@
     .wrap { padding-top: calc(env(safe-area-inset-top) + 20px); }
     .gate { padding-top: calc(env(safe-area-inset-top) + 24px); }
     @media (max-width: 600px) { .wrap { padding-top: calc(env(safe-area-inset-top) + 12px); } }
+    /* 2.2.6 · Teléfono: la página completa queda quieta y lo que se desplaza es el contenido (como las apps nativas).
+       Así iOS no puede "correr" la pantalla al abrir y cerrar el teclado, y la barra inferior no flota. */
+    @media (max-width: 600px) {
+      html, body { height: 100%; overflow: hidden; }
+      .wrap { height: 100%; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
+    }

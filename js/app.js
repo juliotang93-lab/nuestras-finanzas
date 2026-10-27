@@ -1240,6 +1240,7 @@
       store.set('finanzas-view', v);
       render();
       window.scrollTo({ top: 0 });
+      const scroller = document.querySelector('.wrap'); if (scroller) scroller.scrollTop = 0; // en el teléfono se desplaza el contenido, no la página
     }
 
     /* Exporta a CSV lo que muestra Reportes (abre bien en Excel y Google Sheets) */
