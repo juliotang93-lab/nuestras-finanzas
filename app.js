@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.2.10';
+    const APP_VERSION = '2.2.11';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
@@ -872,7 +872,8 @@
         <div class="field"><label for="newSpaceName">Nombre del espacio</label><input class="inline-input" id="newSpaceName" maxlength="40" placeholder="Ej. Casa de Pedro" autocomplete="off" style="width:100%"></div>
         <div class="inline"><input class="inline-input" id="newSpaceOwner" type="email" placeholder="correo del dueño@gmail.com" autocomplete="off" aria-label="Correo del dueño"><button class="btn ghost" id="createSpaceBtn" type="button">Crear</button></div>` : '';
       const out = `<div class="danger-zone"><p>¿Usas un teléfono compartido? Cierra sesión al terminar.</p><button class="btn ghost" id="signOutBtn" type="button">Cerrar sesión</button></div>`;
-      $('shareBody').innerHTML = who + spaceSel + spaceName + link + members + add + superSec + out;
+      const ver = `<p class="note" style="text-align:center">Versión ${APP_VERSION} · <button class="link-btn" id="diagBtn" type="button" style="margin:0">Diagnóstico de pantalla</button></p>`;
+      $('shareBody').innerHTML = who + spaceSel + spaceName + link + members + add + superSec + out + ver;
     }
     async function renameSpace() {
       try {
@@ -1514,7 +1515,10 @@
     document.querySelector('.brand .logo').addEventListener('click', () => {
       logoTaps++; clearTimeout(logoTimer); logoTimer = setTimeout(() => { logoTaps = 0; }, 1500);
       if (logoTaps < 5) return;
-      logoTaps = 0;
+      logoTaps = 0; showDiag();
+    });
+    document.addEventListener('click', e => { if (e.target.closest('#diagBtn')) { closeModals(); setTimeout(showDiag, 150); } });
+    function showDiag() {
       const probe = document.createElement('div');
       probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0';
       document.body.appendChild(probe);
@@ -1545,7 +1549,7 @@
       document.body.appendChild(ruler);
       box.onclick = () => { box.remove(); ruler.remove(); };
       document.body.appendChild(box);
-    });
+    }
 
     /* ---------- Inicio ---------- */
     const savedTheme = store.get('finanzas-theme');
