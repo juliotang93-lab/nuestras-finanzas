@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.2.9';
+    const APP_VERSION = '2.3.0';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
@@ -1495,6 +1495,18 @@
     setInterval(() => { if (!document.hidden && !state.saving && !anyModalOpen()) syncAndLoad(); }, 5 * 60000);
     window.addEventListener('online', () => { setNotice(''); syncAndLoad(); });
     window.addEventListener('offline', () => setNotice('Sin conexión: puedes seguir registrando movimientos; se enviarán solos cuando vuelva internet. Editar o borrar necesita conexión.'));
+
+    /* ---------- Teléfono: las secciones van debajo del encabezado y quedan visibles al desplazarse ---------- */
+    const tabsEl = document.querySelector('.tabs'), topbar = document.querySelector('.topbar');
+    const tabsAnchor = document.createComment('tabs');
+    topbar.insertBefore(tabsAnchor, tabsEl);
+    const phoneMq = window.matchMedia('(max-width: 600px)');
+    function placeNav() {
+      if (phoneMq.matches) { if (tabsEl.parentNode !== topbar.parentNode) topbar.after(tabsEl); }
+      else if (tabsEl.parentNode !== topbar) tabsAnchor.after(tabsEl);
+    }
+    if (phoneMq.addEventListener) phoneMq.addEventListener('change', placeNav); else phoneMq.addListener(placeNav);
+    placeNav();
 
     /* ---------- Teléfono: al terminar de escribir, la pantalla vuelve a donde estaba antes de abrir el teclado ---------- */
     const typingField = el => el && el.closest && el.closest('#formPanel') && el.matches('input:not([type=checkbox]):not([type=file]), textarea');
