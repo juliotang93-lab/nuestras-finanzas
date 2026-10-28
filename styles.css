@@ -543,10 +543,12 @@
       .mod-grid { grid-template-columns: 1fr; }
       .kpis.four { grid-template-columns: 1fr 1fr; }
     }
-    /* Teléfonos: secciones debajo del encabezado */
+    /* Teléfonos: barra de navegación inferior */
     @media (max-width: 600px) {
-      /* Secciones arriba y fijas al desplazarse (sticky): no dependen del alto de la pantalla ni del teclado */
-      .wrap > .tabs { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 15; display: flex; margin: 0 calc(-1 * max(12px, env(safe-area-inset-left))) 14px; border-radius: 0; border: 0; border-bottom: 1px solid var(--line); padding: 4px max(4px, env(safe-area-inset-right)) 4px max(4px, env(safe-area-inset-left)); background: var(--bg); box-shadow: 0 6px 12px -10px rgba(27,36,51,.25); }
+      .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; order: 0; border-radius: 0; border: 0; border-top: 1px solid var(--line); padding: 6px max(4px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left)); box-shadow: 0 -4px 20px rgba(27,36,51,.06); }
+      .wrap { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+      .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
+      .update-bar { bottom: calc(80px + env(safe-area-inset-bottom)); }
       .tabs button { flex: 1 1 0; min-width: 0; flex-direction: column; gap: 2px; padding: 6px 2px; border-radius: 12px; font-size: 11px; }
       .tabs button svg { width: 22px; height: 22px; }
       .tabs button[aria-selected="true"] { background: transparent; color: var(--accent); }
@@ -577,3 +579,4 @@
     .wrap { padding-top: calc(env(safe-area-inset-top) + 20px); }
     .gate { padding-top: calc(env(safe-area-inset-top) + 24px); }
     @media (max-width: 600px) { .wrap { padding-top: calc(env(safe-area-inset-top) + 12px); } }
+    .brand .logo { cursor: pointer; } /* iPhone solo reconoce toques en elementos "tocables" */

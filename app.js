@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.3.0';
+    const APP_VERSION = '2.2.10';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
@@ -1496,18 +1496,6 @@
     window.addEventListener('online', () => { setNotice(''); syncAndLoad(); });
     window.addEventListener('offline', () => setNotice('Sin conexión: puedes seguir registrando movimientos; se enviarán solos cuando vuelva internet. Editar o borrar necesita conexión.'));
 
-    /* ---------- Teléfono: las secciones van debajo del encabezado y quedan visibles al desplazarse ---------- */
-    const tabsEl = document.querySelector('.tabs'), topbar = document.querySelector('.topbar');
-    const tabsAnchor = document.createComment('tabs');
-    topbar.insertBefore(tabsAnchor, tabsEl);
-    const phoneMq = window.matchMedia('(max-width: 600px)');
-    function placeNav() {
-      if (phoneMq.matches) { if (tabsEl.parentNode !== topbar.parentNode) topbar.after(tabsEl); }
-      else if (tabsEl.parentNode !== topbar) tabsAnchor.after(tabsEl);
-    }
-    if (phoneMq.addEventListener) phoneMq.addEventListener('change', placeNav); else phoneMq.addListener(placeNav);
-    placeNav();
-
     /* ---------- Teléfono: al terminar de escribir, la pantalla vuelve a donde estaba antes de abrir el teclado ---------- */
     const typingField = el => el && el.closest && el.closest('#formPanel') && el.matches('input:not([type=checkbox]):not([type=file]), textarea');
     let kbStartY = null, kbTimer2 = null;
@@ -1545,7 +1533,17 @@
       const box = document.createElement('div');
       box.style.cssText = 'position:fixed;left:8px;right:8px;top:40%;z-index:99;background:#1B2433;color:#fff;font:13px/1.5 ui-monospace,monospace;padding:12px;border-radius:12px;white-space:pre-wrap';
       box.textContent = lines.join('\n') + '\n\n(toca este cuadro para cerrarlo)';
-      box.onclick = () => box.remove();
+      // Regla en el borde inferior: muestra cuántos puntos quedan ocultos abajo
+      const ruler = document.createElement('div');
+      ruler.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:120px;z-index:98;pointer-events:none;display:flex;flex-direction:column-reverse';
+      ['#D1435B', '#E07B2D', '#E0A21B', '#0F8A6A', '#1D9BB8', '#3B4CCA'].forEach((c, i) => {
+        const r = document.createElement('div');
+        r.style.cssText = 'height:20px;background:' + c + ';color:#fff;font:bold 12px sans-serif;display:flex;align-items:center;padding-left:8px';
+        r.textContent = (i * 20) + '–' + (i * 20 + 20);
+        ruler.appendChild(r);
+      });
+      document.body.appendChild(ruler);
+      box.onclick = () => { box.remove(); ruler.remove(); };
       document.body.appendChild(box);
     });
 
