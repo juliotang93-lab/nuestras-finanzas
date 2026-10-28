@@ -545,14 +545,14 @@
     }
     /* Teléfonos: barra de navegación inferior */
     @media (max-width: 600px) {
-      .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; order: 0; border-radius: 0; border: 0; border-top: 1px solid var(--line); padding: 6px max(4px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left)); box-shadow: 0 -4px 20px rgba(27,36,51,.06); }
-      .wrap { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+      .tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; order: 0; border-radius: 0; border: 0; border-top: 1px solid var(--line); padding: 6px max(4px, env(safe-area-inset-right)) max(6px, calc(env(safe-area-inset-bottom) - 16px)) max(4px, env(safe-area-inset-left)); box-shadow: 0 -4px 20px rgba(27,36,51,.06); }
+      .wrap { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
       .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
       .update-bar { bottom: calc(80px + env(safe-area-inset-bottom)); }
-      .tabs button { flex: 1 1 0; min-width: 0; flex-direction: column; gap: 2px; padding: 6px 2px; border-radius: 12px; font-size: 11px; }
-      .tabs button svg { width: 22px; height: 22px; }
+      .tabs button { flex: 1 1 0; min-width: 0; flex-direction: column; gap: 3px; padding: 4px 2px; border-radius: 12px; font-size: 12px; }
+      .tabs button svg { width: 25px; height: 25px; }
       .tabs button[aria-selected="true"] { background: transparent; color: var(--accent); }
-      .tabs button[aria-selected="true"] svg { background: color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 999px; padding: 2px 10px; width: 46px; box-sizing: content-box; height: 20px; }
+      .tabs button[aria-selected="true"] svg { background: color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 999px; padding: 2px 10px; width: 46px; box-sizing: content-box; height: 23px; }
       .tabs .t-long { display: none; } .tabs .t-short { display: block; }
       #refreshBtn { display: none; }
       .mod-head h1 { font-size: 21px; flex: 1 1 auto; }
