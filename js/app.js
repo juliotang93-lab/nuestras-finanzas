@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.2.0';
+    const APP_VERSION = '2.2.11';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
@@ -872,7 +872,8 @@
         <div class="field"><label for="newSpaceName">Nombre del espacio</label><input class="inline-input" id="newSpaceName" maxlength="40" placeholder="Ej. Casa de Pedro" autocomplete="off" style="width:100%"></div>
         <div class="inline"><input class="inline-input" id="newSpaceOwner" type="email" placeholder="correo del dueño@gmail.com" autocomplete="off" aria-label="Correo del dueño"><button class="btn ghost" id="createSpaceBtn" type="button">Crear</button></div>` : '';
       const out = `<div class="danger-zone"><p>¿Usas un teléfono compartido? Cierra sesión al terminar.</p><button class="btn ghost" id="signOutBtn" type="button">Cerrar sesión</button></div>`;
-      $('shareBody').innerHTML = who + spaceSel + spaceName + link + members + add + superSec + out;
+      const ver = `<p class="note" style="text-align:center">Versión ${APP_VERSION} · <button class="link-btn" id="diagBtn" type="button" style="margin:0">Diagnóstico de pantalla</button></p>`;
+      $('shareBody').innerHTML = who + spaceSel + spaceName + link + members + add + superSec + out + ver;
     }
     async function renameSpace() {
       try {
@@ -1496,39 +1497,58 @@
     window.addEventListener('online', () => { setNotice(''); syncAndLoad(); });
     window.addEventListener('offline', () => setNotice('Sin conexión: puedes seguir registrando movimientos; se enviarán solos cuando vuelva internet. Editar o borrar necesita conexión.'));
 
-    /* ---------- Teléfono: la barra inferior se oculta mientras hay una ventana abierta o el teclado está visible
-       (en iPhone, con el teclado abierto las barras fijas "flotan" y rebotan) ---------- */
-    const syncModalClass = () => document.documentElement.classList.toggle('modal-open', anyModalOpen());
-    new MutationObserver(syncModalClass).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
-    let kbTimer = null;
-    const isTyping = el => el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|file|range|color)$/.test(el.type)));
-    document.addEventListener('focusin', e => { if (isTyping(e.target)) { clearTimeout(kbTimer); document.documentElement.classList.add('kb-open'); } });
-    document.addEventListener('focusout', () => { clearTimeout(kbTimer); kbTimer = setTimeout(() => { if (!isTyping(document.activeElement)) document.documentElement.classList.remove('kb-open'); }, 150); });
-    /* iPhone instalado (pantalla completa): iOS a veces informa la pantalla más corta de lo que es (le resta la zona de la hora)
-       y deja una franja vacía debajo de la barra. Si pasa, se usa el alto real de la pantalla. */
-    function fixAppHeight() {
-      const root = document.documentElement;
-      if (navigator.standalone !== true || !document.documentElement.classList) return;
-      const landscape = window.matchMedia('(orientation: landscape)').matches;
-      const h = landscape ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
-      const short = document.documentElement.classList.contains('kb-open') ? false : (h - window.innerHeight > 10 && h - window.innerHeight < 120);
-      root.classList.toggle('ios-full', short);
-      if (short) root.style.setProperty('--app-h', h + 'px'); else root.style.removeProperty('--app-h');
-    }
-    window.addEventListener('resize', () => setTimeout(fixAppHeight, 50));
-    window.addEventListener('orientationchange', () => setTimeout(fixAppHeight, 300));
-    fixAppHeight();
+    /* ---------- Teléfono: al terminar de escribir, la pantalla vuelve a donde estaba antes de abrir el teclado ---------- */
+    const typingField = el => el && el.closest && el.closest('#formPanel') && el.matches('input:not([type=checkbox]):not([type=file]), textarea');
+    let kbStartY = null, kbTimer2 = null;
+    document.addEventListener('focusin', e => { if (isTouch() && typingField(e.target)) { clearTimeout(kbTimer2); if (kbStartY === null) kbStartY = window.scrollY; } });
+    document.addEventListener('focusout', () => {
+      clearTimeout(kbTimer2);
+      kbTimer2 = setTimeout(() => {
+        if (kbStartY === null || typingField(document.activeElement)) return;
+        const y = kbStartY; kbStartY = null;
+        if (Math.abs(window.scrollY - y) < 500) window.scrollTo({ top: y, behavior: 'smooth' });
+      }, 350);
+    });
 
-    // Android: el teclado se puede cerrar sin salir del campo; se detecta porque la pantalla visible vuelve a su alto
-    if (window.visualViewport) {
-      let maxH = visualViewport.height, shrunk = false;
-      window.addEventListener('orientationchange', () => { maxH = 0; shrunk = false; });
-      visualViewport.addEventListener('resize', () => {
-        const h = visualViewport.height;
-        if (h > maxH) maxH = h;
-        if (h < maxH * 0.75) shrunk = true;
-        else if (shrunk && h > maxH * 0.9) { shrunk = false; document.documentElement.classList.remove('kb-open'); }
+    /* ---------- Diagnóstico de pantalla (tocar el logo 5 veces seguidas) ---------- */
+    let logoTaps = 0, logoTimer = null;
+    document.querySelector('.brand .logo').addEventListener('click', () => {
+      logoTaps++; clearTimeout(logoTimer); logoTimer = setTimeout(() => { logoTaps = 0; }, 1500);
+      if (logoTaps < 5) return;
+      logoTaps = 0; showDiag();
+    });
+    document.addEventListener('click', e => { if (e.target.closest('#diagBtn')) { closeModals(); setTimeout(showDiag, 150); } });
+    function showDiag() {
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0';
+      document.body.appendChild(probe);
+      const cs = getComputedStyle(probe), vv = window.visualViewport || {}, tb = document.querySelector('.tabs').getBoundingClientRect();
+      const meta = (document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]') || {}).content;
+      const lines = [
+        'Versión: ' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '') + ' / ' + (navigator.userAgent.match(/OS [\d_]+/) || [''])[0],
+        'Instalada: ' + navigator.standalone + ' · modo: ' + (matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'navegador') + ' · barra hora: ' + meta,
+        'Pantalla: ' + screen.width + '×' + screen.height + ' · escala ' + devicePixelRatio,
+        'innerHeight: ' + innerHeight + ' · outerHeight: ' + outerHeight + ' · clientHeight: ' + document.documentElement.clientHeight,
+        'visualViewport: alto ' + Math.round(vv.height) + ' · arriba ' + Math.round(vv.offsetTop) + ' · scrollY ' + Math.round(scrollY),
+        'Zona segura: arriba ' + cs.paddingTop + ' · abajo ' + cs.paddingBottom,
+        'Barra: arriba ' + Math.round(tb.top) + ' · abajo ' + Math.round(tb.bottom) + ' · alto ' + Math.round(tb.height)
+      ];
+      probe.remove();
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;left:8px;right:8px;top:40%;z-index:99;background:#1B2433;color:#fff;font:13px/1.5 ui-monospace,monospace;padding:12px;border-radius:12px;white-space:pre-wrap';
+      box.textContent = lines.join('\n') + '\n\n(toca este cuadro para cerrarlo)';
+      // Regla en el borde inferior: muestra cuántos puntos quedan ocultos abajo
+      const ruler = document.createElement('div');
+      ruler.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:120px;z-index:98;pointer-events:none;display:flex;flex-direction:column-reverse';
+      ['#D1435B', '#E07B2D', '#E0A21B', '#0F8A6A', '#1D9BB8', '#3B4CCA'].forEach((c, i) => {
+        const r = document.createElement('div');
+        r.style.cssText = 'height:20px;background:' + c + ';color:#fff;font:bold 12px sans-serif;display:flex;align-items:center;padding-left:8px';
+        r.textContent = (i * 20) + '–' + (i * 20 + 20);
+        ruler.appendChild(r);
       });
+      document.body.appendChild(ruler);
+      box.onclick = () => { box.remove(); ruler.remove(); };
+      document.body.appendChild(box);
     }
 
     /* ---------- Inicio ---------- */
