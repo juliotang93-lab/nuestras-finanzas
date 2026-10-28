@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.2.0';
+    const APP_VERSION = '2.2.9';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
@@ -1495,6 +1495,47 @@
     setInterval(() => { if (!document.hidden && !state.saving && !anyModalOpen()) syncAndLoad(); }, 5 * 60000);
     window.addEventListener('online', () => { setNotice(''); syncAndLoad(); });
     window.addEventListener('offline', () => setNotice('Sin conexión: puedes seguir registrando movimientos; se enviarán solos cuando vuelva internet. Editar o borrar necesita conexión.'));
+
+    /* ---------- Teléfono: al terminar de escribir, la pantalla vuelve a donde estaba antes de abrir el teclado ---------- */
+    const typingField = el => el && el.closest && el.closest('#formPanel') && el.matches('input:not([type=checkbox]):not([type=file]), textarea');
+    let kbStartY = null, kbTimer2 = null;
+    document.addEventListener('focusin', e => { if (isTouch() && typingField(e.target)) { clearTimeout(kbTimer2); if (kbStartY === null) kbStartY = window.scrollY; } });
+    document.addEventListener('focusout', () => {
+      clearTimeout(kbTimer2);
+      kbTimer2 = setTimeout(() => {
+        if (kbStartY === null || typingField(document.activeElement)) return;
+        const y = kbStartY; kbStartY = null;
+        if (Math.abs(window.scrollY - y) < 500) window.scrollTo({ top: y, behavior: 'smooth' });
+      }, 350);
+    });
+
+    /* ---------- Diagnóstico de pantalla (tocar el logo 5 veces seguidas) ---------- */
+    let logoTaps = 0, logoTimer = null;
+    document.querySelector('.brand .logo').addEventListener('click', () => {
+      logoTaps++; clearTimeout(logoTimer); logoTimer = setTimeout(() => { logoTaps = 0; }, 1500);
+      if (logoTaps < 5) return;
+      logoTaps = 0;
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0';
+      document.body.appendChild(probe);
+      const cs = getComputedStyle(probe), vv = window.visualViewport || {}, tb = document.querySelector('.tabs').getBoundingClientRect();
+      const meta = (document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]') || {}).content;
+      const lines = [
+        'Versión: ' + (typeof APP_VERSION !== 'undefined' ? APP_VERSION : '') + ' / ' + (navigator.userAgent.match(/OS [\d_]+/) || [''])[0],
+        'Instalada: ' + navigator.standalone + ' · modo: ' + (matchMedia('(display-mode: standalone)').matches ? 'standalone' : 'navegador') + ' · barra hora: ' + meta,
+        'Pantalla: ' + screen.width + '×' + screen.height + ' · escala ' + devicePixelRatio,
+        'innerHeight: ' + innerHeight + ' · outerHeight: ' + outerHeight + ' · clientHeight: ' + document.documentElement.clientHeight,
+        'visualViewport: alto ' + Math.round(vv.height) + ' · arriba ' + Math.round(vv.offsetTop) + ' · scrollY ' + Math.round(scrollY),
+        'Zona segura: arriba ' + cs.paddingTop + ' · abajo ' + cs.paddingBottom,
+        'Barra: arriba ' + Math.round(tb.top) + ' · abajo ' + Math.round(tb.bottom) + ' · alto ' + Math.round(tb.height)
+      ];
+      probe.remove();
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;left:8px;right:8px;top:40%;z-index:99;background:#1B2433;color:#fff;font:13px/1.5 ui-monospace,monospace;padding:12px;border-radius:12px;white-space:pre-wrap';
+      box.textContent = lines.join('\n') + '\n\n(toca este cuadro para cerrarlo)';
+      box.onclick = () => box.remove();
+      document.body.appendChild(box);
+    });
 
     /* ---------- Inicio ---------- */
     const savedTheme = store.get('finanzas-theme');
