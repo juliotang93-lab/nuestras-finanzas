@@ -1,10 +1,10 @@
 /* Nuestras Finanzas · Service worker
    Guarda la app en el teléfono para que abra al instante y sin internet.
    Nunca guarda datos financieros: las consultas a Supabase siempre van a la red. */
-const VERSION = 'nf-2.2.12';
+const VERSION = 'nf-2.3.0';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
-  'js/config.js', 'js/data.js', 'js/gate.js', 'js/insights.js', 'js/app.js', 'js/modules.js', 'js/pwa.js',
+  'js/config.js', 'js/data.js', 'js/gate.js', 'js/insights.js', 'js/app.js', 'js/modules.js', 'js/home.js', 'js/pwa.js',
   'js/vendor/supabase.js', 'js/vendor/chart.umd.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'
 ];

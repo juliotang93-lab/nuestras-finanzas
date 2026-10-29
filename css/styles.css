@@ -580,3 +580,133 @@
     .gate { padding-top: calc(env(safe-area-inset-top) + 24px); }
     @media (max-width: 600px) { .wrap { padding-top: calc(env(safe-area-inset-top) + 12px); } }
     .brand .logo { cursor: pointer; } /* iPhone solo reconoce toques en elementos "tocables" */
+
+    /* ===== 2.3 · Inicio renovado ===== */
+    /* Botones más suaves: esquinas redondeadas, sombras ligeras y respuesta al toque */
+    .btn { border-radius: 14px; box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--accent) 70%, transparent); transition: transform .12s ease, box-shadow .2s, filter .2s; }
+    .btn:hover { filter: brightness(1.06); }
+    .btn:active { transform: scale(.98); }
+    .btn.ghost { border-radius: 12px; box-shadow: none; }
+    .btn:disabled { opacity: .6; box-shadow: none; }
+    .chip, .chip-btn, .icon-btn, .tabs button, .type-toggle button, .seg button { transition: background-color .2s, color .2s, transform .12s ease, box-shadow .2s; }
+    .chip:active, .icon-btn:active, .seg button:active, .type-toggle button:active { transform: scale(.96); }
+    .icon-btn { border-color: transparent; box-shadow: 0 1px 2px rgba(27,36,51,.06), 0 4px 12px rgba(27,36,51,.06); }
+    .type-toggle { border-radius: 14px; }
+    .type-toggle button { border-radius: 11px; }
+    .type-toggle button[aria-pressed="true"] { box-shadow: 0 4px 10px -4px rgba(27,36,51,.35); }
+    .chip[aria-pressed="true"] { box-shadow: 0 3px 8px -4px rgba(27,36,51,.4); }
+    .field input, .field select, .money-input { border-radius: 12px; }
+
+    /* Selector segmentado */
+    .seg { display: inline-flex; background: var(--surface-2); border-radius: 999px; padding: 3px; gap: 2px; }
+    .seg button { border: 0; background: transparent; color: var(--muted); font-weight: 700; font-size: 13px; padding: 6px 14px; border-radius: 999px; cursor: pointer; }
+    .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 2px 8px rgba(27,36,51,.12); }
+    .seg.small button { padding: 5px 12px; font-size: 12.5px; }
+
+    /* Inicio: lo que solo se ve en Movimientos */
+    .home-top { display: grid; gap: 14px; margin-bottom: 18px; }
+    body:not([data-view="mov"]) .home-top { display: none; }
+    body[data-view="mov"] .hero .split-bar, body[data-view="mov"] .hero .month-stats { display: none; }
+    body[data-view="mov"] .hero { padding: 16px 20px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    body[data-view="mov"] .hero .balance { font-size: clamp(26px, 6vw, 34px); margin: 0; }
+    body[data-view="mov"] .filters { display: none; }
+    html.show-filters body[data-view="mov"] .filters { display: flex; }
+
+    /* Anillos de presupuesto */
+    .rings { display: flex; gap: 14px; overflow-x: auto; padding: 2px 2px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .rings::-webkit-scrollbar { display: none; }
+    .ring { flex: none; width: 74px; border: 0; background: none; padding: 0; display: grid; justify-items: center; gap: 3px; cursor: pointer; color: inherit; font: inherit; }
+    .ring-circle { position: relative; width: 60px; height: 60px; display: grid; place-items: center; background: var(--surface); border-radius: 50%; box-shadow: var(--shadow); }
+    .ring-circle svg { position: absolute; inset: 0; width: 60px; height: 60px; transform: rotate(-90deg); }
+    .ring-bg { fill: none; stroke: var(--surface-2); stroke-width: 5; }
+    .ring-fg { fill: none; stroke-width: 5; stroke-linecap: round; transition: stroke-dasharray .5s; }
+    .ring-ic { font-size: 22px; position: relative; }
+    .ring-plus { font-size: 30px; font-weight: 300; line-height: 1; color: var(--ink); }
+    .ring-name { font-size: 12px; font-weight: 600; max-width: 74px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+    .ring-pct { font-size: 11px; font-weight: 800; line-height: 1; }
+    .ring.add .ring-circle { border: 2px dashed var(--line); box-shadow: none; background: transparent; }
+    .ring:active .ring-circle { transform: scale(.95); }
+
+    /* Flujo de caja */
+    .cash { padding-bottom: 14px; }
+    .cash-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+    .cash-net { font-size: clamp(26px, 6.5vw, 34px); font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
+    .cash-net.neg { color: var(--expense); } .cash-net.pos { color: var(--ink); }
+    .cash-sub { color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+    .cash-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+    .pill { font-size: 13px; font-weight: 800; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+    .pill.in { background: var(--income-soft); color: var(--income); }
+    .pill.out { background: var(--expense-soft); color: var(--expense); }
+    .cash .seg { margin: 14px 0 6px; }
+    .cash-chart { position: relative; height: 190px; }
+    .cash-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
+    .cash-nav .icon-btn { width: 34px; height: 34px; }
+    .cash-nav .icon-btn:disabled { opacity: .3; cursor: default; }
+    .cash-range { border: 0; background: var(--surface-2); color: var(--ink); font-weight: 700; font-size: 13.5px; padding: 8px 16px; border-radius: 999px; cursor: pointer; min-width: 160px; }
+
+    /* Lista */
+    .list-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+    .list-head h2 { margin: 0; }
+    .cat-filter { padding: 7px 30px 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 14px; max-width: 100%; }
+    .cat-filter.active { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+    .day-chip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-radius: 12px; padding: 8px 12px; font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+    .day-chip .link-btn { margin: 0 0 0 auto; }
+    .list-panel.cal-mode #typeChips, .list-panel.cal-mode #search { display: none; }
+
+    /* Calendario */
+    .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .cal-head strong { font-size: 15px; }
+    .cal-head .icon-btn:disabled { opacity: .3; }
+    .cal-sum { display: flex; justify-content: center; gap: 18px; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+    .cal-wd { text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); padding-bottom: 2px; }
+    .cal-cell { position: relative; aspect-ratio: 1 / 1.05; border: 0; border-radius: 12px; cursor: pointer; padding: 4px 2px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 1px; font: inherit; color: var(--ink);
+      background: color-mix(in srgb, var(--expense) var(--lvl, 0%), var(--surface-2)); }
+    .cal-cell.empty { background: transparent; cursor: default; }
+    .cal-cell.future { opacity: .45; }
+    .cal-cell.today { box-shadow: inset 0 0 0 2px var(--ink); }
+    .cal-cell.sel { box-shadow: inset 0 0 0 2px var(--accent); }
+    .cal-d { font-size: 13px; font-weight: 700; }
+    .cal-e { font-size: 10.5px; font-weight: 800; color: var(--expense); }
+    :root[data-theme="dark"] .cal-e { color: #FFD1D8; }
+    .cal-in { position: absolute; bottom: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--income); }
+
+    /* Deslizar para editar / eliminar */
+    .tx-swipe { position: relative; border-radius: 16px; overflow: hidden; }
+    .tx-swipe > .tx { position: relative; z-index: 1; background: var(--surface); touch-action: pan-y; }
+    .tx-acts { position: absolute; top: 0; right: 0; bottom: 0; width: 150px; display: flex; z-index: 0; }
+    .tx-act { flex: 1; border: 0; display: grid; place-content: center; justify-items: center; gap: 2px; font-size: 18px; color: #fff; cursor: pointer; font-family: inherit; }
+    .tx-act span { font-size: 12px; font-weight: 700; }
+    .tx-act.edit { background: var(--accent); }
+    .tx-act.del { background: var(--expense); }
+    .tx-act.del.confirm { background: #A3203A; }
+    .tx-swipe:not(.open) .tx-acts { visibility: hidden; }
+    .tx-swipe.open .tx-acts, .tx-swipe .tx[style*="translateX"] ~ .tx-acts { visibility: visible; }
+
+    /* Botón + flotante y formulario como hoja (solo teléfono) */
+    .fab { display: none; }
+    .form-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+    .form-head h2 { margin: 0; }
+    .sheet-close { display: none; }
+    @media (max-width: 600px) {
+      .fab { display: grid; place-items: center; position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: calc(86px + max(0px, env(safe-area-inset-bottom) - 16px)); z-index: 14;
+        width: 58px; height: 58px; border-radius: 50%; border: 0; background: var(--income); color: #fff; cursor: pointer;
+        box-shadow: 0 10px 24px -6px color-mix(in srgb, var(--income) 70%, transparent), 0 2px 6px rgba(0,0,0,.12); transition: transform .15s ease; }
+      .fab svg { width: 26px; height: 26px; }
+      .fab:active { transform: scale(.92); }
+      body:not([data-view="mov"]) .fab { display: none; }
+      html.form-open .fab { display: none; }
+      #viewMov .side { display: none; }
+      html.form-open #viewMov .side { display: flex; position: fixed; inset: 0; z-index: 19; background: rgba(16,21,31,.5); align-items: flex-end; animation: nfFade .2s ease; }
+      html.form-open, html.form-open body { overflow: hidden; }
+      html.form-open #formPanel { width: 100%; max-height: 90vh; max-height: 90dvh; overflow-y: auto; overscroll-behavior: contain; border-radius: 22px 22px 0 0;
+        padding: 18px max(16px, env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); animation: nfUp .25s ease; }
+      html.form-open .sheet-close { display: grid; }
+      .grid { display: block; }
+      .list-panel { padding: 0; background: none; box-shadow: none; }
+      .list-tools .cat-filter { flex: 1 1 140px; }
+    }
+    @keyframes nfFade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes nfUp { from { transform: translateY(40px); opacity: .6; } to { transform: none; opacity: 1; } }
+    body[data-view="mov"] .hero { display: none; } /* el saldo ya está en la tarjeta "Todas" y el flujo de caja muestra el período */
+    @media (min-width: 601px) { .cash-chart { height: 220px; } }

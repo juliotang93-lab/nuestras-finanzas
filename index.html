@@ -54,6 +54,7 @@
     </header>
 
     <nav class="wallets" id="walletStrip" aria-label="Carteras"></nav>
+    <button type="button" class="fab" id="fabAdd" aria-label="Nuevo movimiento"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
 
     <section class="filters" aria-label="Rango de fechas">
       <div>
@@ -91,11 +92,37 @@
       </div>
     </section>
 
+    <!-- Inicio: presupuestos y flujo de caja -->
+    <section class="home-top" id="homeTop" hidden>
+      <div class="rings" id="budRings"></div>
+      <section class="panel cash" id="cashPanel">
+        <div class="cash-head">
+          <div>
+            <div class="cash-net num" id="cashNet">—</div>
+            <div class="cash-sub"><span id="cashTitle">Flujo de caja</span></div>
+          </div>
+          <div class="cash-pills"><span class="pill in num" id="cashIn">+ $ 0</span><span class="pill out num" id="cashOut">− $ 0</span></div>
+        </div>
+        <div class="seg" id="cashGran" role="group" aria-label="Agrupar por">
+          <button type="button" data-gran="week" aria-pressed="false">Semana</button>
+          <button type="button" data-gran="month" aria-pressed="true">Mes</button>
+          <button type="button" data-gran="year" aria-pressed="false">Año</button>
+          <button type="button" data-gran="all" aria-pressed="false">Todo</button>
+        </div>
+        <div class="cash-chart"><canvas id="cashChart" aria-label="Ingresos y gastos por período"></canvas></div>
+        <div class="cash-nav">
+          <button type="button" class="icon-btn" id="cashPrev" aria-label="Período anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+          <button type="button" class="cash-range" id="cashRange">—</button>
+          <button type="button" class="icon-btn" id="cashNext" aria-label="Período siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></button>
+        </div>
+      </section>
+    </section>
+
     <!-- Vista: Movimientos -->
     <div class="grid" id="viewMov">
       <aside class="side">
         <section class="panel" id="formPanel">
-          <h2 id="formTitle">Nuevo movimiento</h2>
+          <div class="form-head"><h2 id="formTitle">Nuevo movimiento</h2><button type="button" class="icon-btn sheet-close" id="formClose" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
           <div class="type-toggle" id="formType" role="group" aria-label="Tipo de movimiento">
             <button type="button" data-type="Gasto" aria-pressed="true">Gasto</button>
             <button type="button" data-type="Ingreso" aria-pressed="false">Ingreso</button>
@@ -142,15 +169,23 @@
       </aside>
 
       <section class="panel list-panel">
-        <h2>Movimientos</h2>
+        <div class="list-head">
+          <h2>Movimientos</h2>
+          <div class="seg small" id="listMode" role="group" aria-label="Vista">
+            <button type="button" data-mode="list" aria-pressed="true">Lista</button>
+            <button type="button" data-mode="cal" aria-pressed="false">Calendario</button>
+          </div>
+        </div>
         <div class="list-tools">
           <div class="chips" id="typeChips" role="group" aria-label="Filtrar por tipo">
             <button class="chip" data-filter="Todos" aria-pressed="true">Todos</button>
             <button class="chip" data-filter="Ingreso" aria-pressed="false">Ingresos</button>
             <button class="chip" data-filter="Gasto" aria-pressed="false">Gastos</button>
           </div>
+          <select class="cat-filter" id="catFilter" aria-label="Filtrar por categoría"><option value="">Todas las categorías</option></select>
           <input class="search" id="search" type="search" placeholder="Buscar" title="Busca por descripción, categoría o etiqueta" aria-label="Buscar">
         </div>
+        <div class="day-chip" id="dayChip" hidden></div>
         <div id="txList"><div class="skeleton"></div><div class="skeleton" style="width:80%"></div><div class="skeleton" style="width:60%"></div></div>
       </section>
     </div>
@@ -362,6 +397,7 @@
   <script src="js/insights.js"></script>
   <script src="js/app.js"></script>
   <script src="js/modules.js"></script>
+  <script src="js/home.js"></script>
   <script src="js/pwa.js"></script>
 </body>
 </html>

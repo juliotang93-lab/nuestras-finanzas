@@ -495,6 +495,6 @@
     else if (view === 'ana') renderAna();
     else if (view === 'goal') renderGoal();
   }
-  window.NFModules = { render, renderBell, openAlerts };
+  window.NFModules = { render, renderBell, openAlerts, openBudget };
   if (state.view && state.view !== 'mov' && state.view !== 'rep') render(state.view);
 })();
