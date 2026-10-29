@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.2.12';
+    const APP_VERSION = '2.3.0';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
@@ -27,6 +27,7 @@
       tagList: [], formTags: [], tag: 'Todas', receipt: null,
       detail: null,
       budgets: [], goals: [], contributions: [], recurring: [], prefs: {},
+      listMode: 'list', day: '', catFilter: '',
       loading: true, saving: false
     };
     const charts = {};
@@ -110,6 +111,19 @@
       $('preset').value = 'custom';
       render();
     }
+    // Rango elegido desde el flujo de caja de Inicio
+    function setRange(from, to, preset) {
+      state.from = from || ''; state.to = to || ''; state.preset = preset || 'custom'; state.limit = PAGE; state.day = '';
+      $('preset').value = state.preset; $('from').value = state.from; $('to').value = state.to;
+    }
+    // Eliminar desde la lista (deslizar): también sirve para los guardados sin conexión
+    async function deleteTx(id) {
+      const t = state.transactions.find(x => x.id === id); if (!t) return;
+      if (t.pendiente) { queue.remove(id); }
+      else await call('deleteTransaction', id);
+      state.transactions = state.transactions.filter(x => x.id !== id);
+      render(); toast('Movimiento eliminado');
+    }
     const inRange = t => (!state.from || t.fecha >= state.from) && (!state.to || t.fecha <= state.to);
     const inWallet = t => state.wallet === 'Todas' || (state.wallet === NONE ? !walletOf(t.cartera) : t.cartera === state.wallet);
     const inTag = t => state.tag === 'Todas' || (t.etiquetas || []).includes(state.tag);
@@ -124,6 +138,7 @@
       store.set('finanzas-theme', theme);
       if (state.view === 'rep') renderReports();
       else if (state.view === 'ana' && window.NFModules) NFModules.render('ana');
+      else if (state.view === 'mov' && window.NFHome) NFHome.render();
     }
 
     /* ---------- Saldos ---------- */
@@ -280,6 +295,7 @@
       if ($('repeat')) $('repeat').value = '';
       state.formTags = []; state.receipt = null; renderTagPicker(); renderReceipt();
       updateSaveLabel();
+      if (window.NFHome) NFHome.closeSheet();
     }
 
     /* ---------- Detalle de movimiento (ver, editar, eliminar) ---------- */
@@ -977,7 +993,7 @@
       renderWallets();
       renderSummary();
       fillWalletSelect();
-      if (state.view === 'mov') renderList();
+      if (state.view === 'mov') { if (window.NFHome) NFHome.render(); renderList(); }
       else if (state.view === 'rep') renderReports();
       else if (window.NFModules) NFModules.render(state.view);
       if (window.NFModules) NFModules.renderBell();
@@ -1055,7 +1071,8 @@
       const sign = t.tipo === 'Ingreso' ? '+' : '−';
       const desc = opts.withDate ? fmtDate(t.fecha) + (t.descripcion ? ', ' + t.descripcion : '') : t.descripcion;
       const extras = receiptLink(t) + tagsInline(t);
-      return `<div class="tx" role="button" tabindex="0" data-edit-tx="${escapeHtml(t.id)}" aria-label="Ver ${escapeHtml(t.categoria)} ${money.format(t.monto)}">
+      const open = opts.swipe ? `<div class="tx-swipe"><div class="tx-acts" aria-hidden="true"><button type="button" class="tx-act edit" data-sw-edit="${escapeHtml(t.id)}" tabindex="-1">✏️<span>Editar</span></button><button type="button" class="tx-act del" data-sw-del="${escapeHtml(t.id)}" tabindex="-1">🗑️<span>Eliminar</span></button></div>` : '';
+      return open + `<div class="tx" role="button" tabindex="0" data-edit-tx="${escapeHtml(t.id)}" aria-label="Ver ${escapeHtml(t.categoria)} ${money.format(t.monto)}">
         <span class="tx-icon" style="--cc:${catColor(t.categoria)}" aria-hidden="true">${iconFor(t.tipo, t.categoria)}</span>
         <span class="tx-main">
           <strong>${escapeHtml(t.categoria)}</strong>
@@ -1065,13 +1082,16 @@
           ${t.pendiente ? `<small class="tx-pending ${t.errorEnvio ? 'err' : ''}">${t.errorEnvio ? '⚠️ No se pudo enviar' : '⏳ Pendiente de enviar'}</small>` : ''}
         </span>
         <span class="tx-amount num ${t.tipo === 'Ingreso' ? 'in' : ''}">${sign}${money.format(t.monto)}</span>
-      </div>`;
+      </div>` + (opts.swipe ? '</div>' : '');
     }
 
     function renderList() {
       if (state.loading) return;
+      if (window.NFHome && state.listMode === 'cal') { NFHome.renderCalendar(); return; }
       const q = state.query.toLowerCase();
-      const rows = scoped()
+      const base = state.day ? state.transactions.filter(t => t.fecha === state.day && inWallet(t)) : scoped();
+      const rows = base
+        .filter(t => !state.catFilter || t.categoria === state.catFilter)
         .filter(t => state.filter === 'Todos' || t.tipo === state.filter)
         .filter(t => !q || t.descripcion.toLowerCase().includes(q) || t.categoria.toLowerCase().includes(q) || (t.etiquetas || []).some(x => x.toLowerCase().includes(q)))
         .sort((a, b) => b.fecha.localeCompare(a.fecha));
@@ -1081,7 +1101,7 @@
         return;
       }
       if (!rows.length) {
-        $('txList').innerHTML = scoped().length
+        $('txList').innerHTML = base.length
           ? '<div class="empty"><strong>Ningún movimiento coincide</strong>Prueba con otro filtro o búsqueda.</div>'
           : '<div class="empty"><strong>No hay movimientos en este período</strong>Cambia el rango de fechas o registra uno nuevo con el formulario.</div>';
         return;
@@ -1094,7 +1114,7 @@
         const net = items.reduce((s, t) => s + (t.tipo === 'Ingreso' ? t.monto : -t.monto), 0);
         return `<div class="day-group">
           <div class="day-title"><span>${dayLabel(date)}</span><span class="num">${net >= 0 ? '+' : '−'}${money.format(Math.abs(net))}</span></div>
-          <div class="day-card">${items.map(t => txRow(t)).join('')}</div>
+          <div class="day-card">${items.map(t => txRow(t, { swipe: true })).join('')}</div>
         </div>`;
       }).join('') + (rows.length > state.limit ? `<button class="btn ghost more" id="moreBtn">Mostrar más (${rows.length - state.limit} restantes)</button>` : '');
     }
@@ -1561,7 +1581,8 @@
     /* Herramientas que usan las secciones de Presupuestos, Análisis, Metas y Alertas (js/modules.js) */
     window.NFUI = { state, $, money, escapeHtml, iconFor, catColor, call, toast, openModal, closeModals, load, render, setView,
       walletIcon, walletOf, iso, parseISO, fmtDate, ICONS, CHART_COLORS, cssVar, delButton, armOrRun, resetDel, isTouch,
-      formatAmountInput, parseAmount, openTxDetail, buildChart, txRow, store };
+      formatAmountInput, parseAmount, openTxDetail, buildChart, txRow, store,
+      renderList, renderSummary, inWallet, scoped, monthKey, LOCALE, PAGE, deleteTx, setRange };
     document.body.dataset.view = 'mov';
 
     /* Arranque: primero la sesión, luego los datos */
