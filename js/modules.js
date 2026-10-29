@@ -35,9 +35,24 @@
      ========================================================= */
   function renderBud() {
     const el = $('viewBud'), mk = budMonth, t = today();
-    const st = I.budgetStatus(state.budgets, state.transactions, mk, t);
+    const mine = state.budgets.filter(b => b.mine), others = state.budgets.filter(b => !b.mine);
+    const st = I.budgetStatus(mine, state.transactions, mk, t);
     const total = st.find(b => !b.categoria), cats = st.filter(b => b.categoria).sort((a, b) => b.pct - a.pct);
-    const sug = I.budgetSuggestions(state.transactions, state.budgets, mk);
+    const sug = I.budgetSuggestions(state.transactions, mine, mk);
+    // Presupuestos de las otras personas del hogar (solo para ver)
+    const owners = [...new Set(others.map(b => b.email))];
+    const othersHtml = owners.map(em => {
+      const list = I.budgetStatus(others.filter(b => b.email === em), state.transactions, mk, t)
+        .sort((a, b) => (!a.categoria ? -1 : 0) - (!b.categoria ? -1 : 0) || b.pct - a.pct);
+      return `<section class="panel"><div class="panel-title"><h2>Presupuestos de ${esc(em.split('@')[0])}</h2><span class="badge b-none">Solo ver</span></div>
+        ${list.map(b => `<button type="button" class="bud-row" data-bud-other="${esc(em)}">
+          <span class="cat-dot" style="--cc:${b.categoria ? U.catColor(b.categoria) : '#3B4CCA'}">${b.categoria ? catIcon(b.categoria) : '🧾'}</span>
+          <span class="bud-main"><span class="bud-line"><strong>${esc(b.categoria || 'Total del mes')}</strong><span class="num ${b.level}-text">${Math.round(b.pct)}%</span></span>
+            ${bar(b.pct, b.level)}
+            <small>${fmt(b.spent)} de ${fmt(b.monto)} · ${b.remaining >= 0 ? 'quedan ' + fmt(b.remaining) : 'se pasó ' + fmt(-b.remaining)}</small></span>
+        </button>`).join('')}
+        <p class="note">El consumo se calcula con los movimientos de las carteras que tú puedes ver.</p></section>`;
+    }).join('');
     const isCurrent = mk === thisMonth();
     let head = '';
     if (total) {
@@ -74,6 +89,7 @@
       <div class="mod-head"><h1>Presupuestos</h1>${monthNav('bud', mk)}<button type="button" class="btn" data-bud-new="1">+ Presupuesto</button></div>
       ${head}
       <section class="panel">${cats.length ? `<h2>Por categoría</h2>${rows}` : empty('Aún no tienes presupuestos por categoría', 'Elige una categoría y un límite para el mes; te avisaremos al llegar al 80% y si te pasas. Abajo tienes sugerencias según lo que sueles gastar.')}</section>
+      ${othersHtml}
       ${sug.categorias.length || sug.total ? `<section class="panel"><h2>Presupuestos sugeridos</h2>
         <p class="note" style="margin-top:0">Según tu promedio de los últimos meses. Toca un valor para crearlo.</p>
         ${sug.total ? `<div class="sug-row"><span class="cat-dot" style="--cc:#3B4CCA">🧾</span><span class="bud-main"><strong>Total del mes</strong><small>Promedio ${fmt(sug.total.avg)} al mes</small></span><span class="sug-actions"><button type="button" class="chip-btn" data-sug="" data-amt="${sug.total.sugerido}">${fmt(sug.total.sugerido)}<small>−10%</small></button></span></div>` : ''}
@@ -84,7 +100,7 @@
   function openBudget(id, preset) {
     const b = id ? state.budgets.find(x => x.id === id) : null;
     const cat = b ? b.categoria : (preset && preset.categoria !== undefined ? preset.categoria : undefined);
-    const used = new Set(state.budgets.map(x => x.categoria || ''));
+    const used = new Set(state.budgets.filter(x => x.mine).map(x => x.categoria || ''));
     const options = [['', 'Total del mes']].concat(expenseCats().map(c => [c.nombre, c.nombre]))
       .filter(o => b ? (o[0] === (b.categoria || '')) : !used.has(o[0]) || o[0] === cat);
     const sug = I.budgetSuggestions(state.transactions, [], budMonth);
@@ -323,7 +339,7 @@
      ========================================================= */
   function currentAlerts() {
     if (!state.transactions.length && !state.goals.length) return [];
-    return I.alerts({ txs: state.transactions, budgets: state.budgets, goals: state.goals, contributions: state.contributions, rules: state.recurring, today: today(), money, dismissed });
+    return I.alerts({ txs: state.transactions, budgets: state.budgets.filter(b => b.mine), goals: state.goals, contributions: state.contributions, rules: state.recurring, today: today(), money, dismissed });
   }
   function renderBell() {
     const b = $('bellBadge'); if (!b) return;
@@ -408,6 +424,7 @@
   $('viewBud').addEventListener('click', e => {
     const m = e.target.closest('[data-month]'); if (m) return onMonth(m);
     const b = e.target.closest('[data-bud]'); if (b) return openBudget(b.dataset.bud);
+    const bo = e.target.closest('[data-bud-other]'); if (bo) return U.toast('Este presupuesto es de ' + bo.dataset.budOther.split('@')[0] + '; solo esa persona puede cambiarlo.');
     if (e.target.closest('[data-bud-new]')) return openBudget(null);
     const s = e.target.closest('[data-sug]');
     if (s) return act(() => U.call('saveBudget', { categoria: s.dataset.sug || null, monto: Number(s.dataset.amt) }), 'Presupuesto creado: ' + (s.dataset.sug || 'Total del mes'));

@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.3.0';
+    const APP_VERSION = '2.4.0';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
@@ -317,8 +317,65 @@
       $('tdBody').scrollTop = 0;
     }
 
+    /* Nuevo movimiento: la misma hoja de edición, ya en modo edición */
+    function openNewTx(tipo) {
+      if (!state.wallets.length) { toast('Crea una cartera primero.', true); openWalletModal(); return; }
+      tipo = tipo || state.formType || 'Gasto';
+      const cats = state.categories[tipo] || [];
+      const last = store.get('nf-ultima-cat-' + tipo);
+      const cat = (cats.find(c => c[0] === last) || cats[0] || [''])[0];
+      const fav = store.get('finanzas-cartera');
+      const cartera = state.wallet !== 'Todas' && walletOf(state.wallet) ? state.wallet : walletOf(fav) ? fav : state.wallets[0].nombre;
+      const blank = { tipo, categoria: cat, cartera, monto: 0, fecha: iso(new Date()), descripcion: '', etiquetas: [] };
+      state.detail = { id: null, isNew: true, editing: true, receipt: null, removeFactura: false, confirmClose: false, saving: false,
+        orig: Object.assign({}, blank), draft: Object.assign({}, blank, { etiquetas: [], repeat: '' }) };
+      $('txModal').classList.add('is-new');
+      renderTxDetail();
+      $('txModal').hidden = false;
+      $('tdBody').scrollTop = 0;
+      if (!isTouch()) setTimeout(() => $('tdMonto') && $('tdMonto').focus(), 60);
+    }
+    async function saveNewTx() {
+      const d = state.detail; if (!d || d.saving) return;
+      const x = d.draft;
+      if (!x.monto || x.monto <= 0) { toast('Escribe un valor mayor que 0.', true); if ($('tdMonto')) $('tdMonto').focus(); return; }
+      if (!x.cartera) { toast('Elige una cartera.', true); return; }
+      if (!x.fecha) { toast('Elige una fecha.', true); return; }
+      const payload = { tipo: x.tipo, categoria: x.categoria, cartera: x.cartera, monto: x.monto, fecha: x.fecha, descripcion: x.descripcion.trim(),
+        etiquetas: x.etiquetas.slice(), factura: d.receipt ? { name: d.receipt.name, mimeType: d.receipt.mimeType, data: d.receipt.data } : null };
+      const repeat = x.repeat || '';
+      store.set('nf-ultima-cat-' + x.tipo, x.categoria);
+      if (!navigator.onLine) { closeTxDetail(true); saveOffline(payload, repeat); return; }
+      d.saving = true;
+      const btn = $('tdSave'); btn.disabled = true; btn.textContent = d.receipt ? 'Subiendo factura…' : 'Guardando…';
+      try {
+        payload.id = NF.uuid();
+        const tx = await NF.api.addTransaction(payload);
+        state.transactions.push(tx);
+        NF.api.notifyTx(tx.id);
+        let label = tx.tipo === 'Gasto' ? 'Gasto guardado' : 'Ingreso guardado';
+        closeTxDetail(true);
+        if (repeat) {
+          try {
+            await call('saveRecurring', { tipo: tx.tipo, categoria: tx.categoria, cartera: tx.cartera, monto: tx.monto, descripcion: tx.descripcion,
+              frecuencia: repeat, proxima: NFInsights.nextDate(tx.fecha, repeat) });
+            label += ' y programado';
+            load(true);
+          } catch (e) { toast('Se guardó, pero no se pudo programar: ' + e.message, true); }
+        }
+        store.set('finanzas-cartera', tx.cartera);
+        render();
+        toast(inRange(tx) && inWallet(tx) ? label : label + ' (fuera del filtro actual)');
+      } catch (err) {
+        if (state.detail) state.detail.saving = false;
+        if (err.offline) { closeTxDetail(true); saveOffline(payload, repeat); return; }
+        toast('No se pudo guardar: ' + err.message, true);
+      } finally { btn.disabled = false; updateDetailFoot(); }
+    }
+
     function detailDirty() {
       const d = state.detail; if (!d) return false;
+      if (d.isNew) return !!(d.draft.monto || d.draft.descripcion.trim() || d.receipt);
       const o = d.orig, x = d.draft;
       return d.receipt || d.removeFactura || x.tipo !== o.tipo || x.categoria !== o.categoria || x.cartera !== o.cartera ||
         Number(x.monto) !== Number(o.monto) || x.fecha !== o.fecha || x.descripcion !== o.descripcion ||
@@ -327,7 +384,9 @@
     function updateDetailFoot() {
       const d = state.detail; if (!d) return;
       const dirty = detailDirty();
-      $('tdFoot').hidden = !dirty;
+      $('tdFoot').hidden = !dirty && !d.isNew;
+      if (d.isNew && !d.saving) $('tdSave').textContent = d.draft.tipo === 'Ingreso' ? 'Guardar ingreso' : 'Guardar gasto';
+      else if (!d.saving) $('tdSave').textContent = 'Guardar cambios';
       d.confirmClose = false;
     }
 
@@ -349,14 +408,15 @@
       } else {
         const cats = state.categories[x.tipo] || [];
         const catOpts = cats.map(([n, i]) => `<option value="${escapeHtml(n)}" ${n === x.categoria ? 'selected' : ''}>${i} ${escapeHtml(n)}</option>`).join('')
-          + (cats.some(c => c[0] === x.categoria) ? '' : `<option value="${escapeHtml(x.categoria)}" selected>${escapeHtml(x.categoria)}</option>`);
+          + (cats.some(c => c[0] === x.categoria) || !x.categoria ? '' : `<option value="${escapeHtml(x.categoria)}" selected>${escapeHtml(x.categoria)}</option>`)
+          + '<option value="__edit">✏️ Editar categorías…</option>';
         $('tdHeroBody').innerHTML = `
           <div class="type-toggle td-type" role="group" aria-label="Tipo">
             <button type="button" data-td-type="Gasto" aria-pressed="${x.tipo === 'Gasto'}">Gasto</button>
             <button type="button" data-td-type="Ingreso" aria-pressed="${x.tipo === 'Ingreso'}">Ingreso</button>
           </div>
           <div class="money-input td-money filled"><span class="prefix" aria-hidden="true">$</span>
-            <input class="amount-input num" id="tdMonto" type="text" inputmode="numeric" autocomplete="off" value="${amountText(x.monto)}" aria-label="Valor"></div>
+            <input class="amount-input num" id="tdMonto" type="text" inputmode="numeric" autocomplete="off" value="${x.monto ? amountText(x.monto) : ''}" placeholder="0" aria-label="Valor"></div>
           <select class="td-select-cat" id="tdCatSel" aria-label="Categoría">${catOpts}</select>`;
       }
 
@@ -368,7 +428,7 @@
       let receipt;
       if (d.receipt) {
         receipt = `<div class="receipt-preview">${d.receipt.preview ? `<img src="${d.receipt.preview}" alt="Vista previa">` : '<span class="doc">📄</span>'}
-          <div><strong>${escapeHtml(d.receipt.name)}</strong><small>Se guardará al tocar "Guardar cambios"</small></div>
+          <div><strong>${escapeHtml(d.receipt.name)}</strong><small>${d.isNew ? "Se subirá al guardar el movimiento" : "Se guardará al tocar \"Guardar cambios\""}</small></div>
           <button type="button" class="del-btn" id="tdUndoReceipt"><span class="label">Quitar</span></button></div>`;
       } else if (o.factura && !d.removeFactura) {
         receipt = `<div class="receipt-preview"><span class="doc">📎</span>
@@ -387,6 +447,7 @@
           <label class="td-row"><span>${x.tipo === 'Ingreso' ? 'Recibido en' : 'Pagado desde'}</span>
             <select id="tdWallet" aria-label="Cartera">${walletOpts}</select></label>
           <label class="td-row"><span>Cuándo</span><input type="date" id="tdFecha" value="${escapeHtml(x.fecha)}" aria-label="Fecha"></label>
+          ${d.isNew ? `<label class="td-row"><span>Repetir</span><select id="tdRepeat" aria-label="Repetir">${[['', 'No se repite'], ['mensual', 'Cada mes'], ['quincenal', 'Cada 15 días'], ['semanal', 'Cada semana'], ['anual', 'Cada año']].map(r => `<option value="${r[0]}" ${r[0] === (x.repeat || '') ? 'selected' : ''}>${r[1]}</option>`).join('')}</select></label>` : ''}
           ${o.creadoPor && o.creadoPor !== state.me ? `<div class="td-row"><span>Registrado por</span><strong>${escapeHtml(shortName(o.creadoPor))}</strong></div>` : ''}
         </div>
         <div class="td-card">
@@ -395,6 +456,7 @@
             <span class="td-tag-icon" aria-hidden="true">🏷️</span>
             ${tagChips}
             <input id="tdNewTag" maxlength="30" placeholder="+ Nueva" autocomplete="off" aria-label="Nueva etiqueta">
+            <button type="button" class="td-chip td-manage" id="tdTagsEdit" aria-label="Administrar etiquetas">⚙️</button>
           </div>
         </div>
         ${receipt}`;
@@ -410,10 +472,12 @@
       }
       state.detail = null;
       $('txModal').hidden = true;
+      $('txModal').classList.remove('is-new');
     }
 
     async function saveTxDetail() {
       const d = state.detail; if (!d || d.saving) return;
+      if (d.isNew) return saveNewTx();
       const x = d.draft;
       if (!x.monto || x.monto <= 0) { toast('Escribe un valor mayor que 0.', true); return; }
       if (!x.cartera) { toast('Elige una cartera.', true); return; }
@@ -474,7 +538,9 @@
       if (!isTouch()) { const f = $(id).querySelector('.modal-body input:not([type=hidden])'); if (f && f.offsetParent) f.focus(); }
     }
     function closeModals() {
-      document.querySelectorAll('.modal-back').forEach(m => m.hidden = true);
+      // La hoja de un movimiento abierto se conserva (por ejemplo, al editar categorías desde ella)
+      document.querySelectorAll('.modal-back').forEach(m => { if (m.id === 'txModal' && state.detail) return; m.hidden = true; });
+      if (state.detail) renderTxDetail();
       state.pickerFor = null; state.walletForm = null; state.wPicker = false;
     }
     const anyModalOpen = () => [...document.querySelectorAll('.modal-back')].some(m => !m.hidden);
@@ -888,7 +954,9 @@
         <div class="field"><label for="newSpaceName">Nombre del espacio</label><input class="inline-input" id="newSpaceName" maxlength="40" placeholder="Ej. Casa de Pedro" autocomplete="off" style="width:100%"></div>
         <div class="inline"><input class="inline-input" id="newSpaceOwner" type="email" placeholder="correo del dueño@gmail.com" autocomplete="off" aria-label="Correo del dueño"><button class="btn ghost" id="createSpaceBtn" type="button">Crear</button></div>` : '';
       const out = `<div class="danger-zone"><p>¿Usas un teléfono compartido? Cierra sesión al terminar.</p><button class="btn ghost" id="signOutBtn" type="button">Cerrar sesión</button></div>`;
-      const ver = `<p class="note" style="text-align:center">Versión ${APP_VERSION} · <button class="link-btn" id="diagBtn" type="button" style="margin:0">Diagnóstico de pantalla</button></p>`;
+      const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const ver = `<div class="theme-row"><span>${dark ? '🌙 Modo oscuro' : '☀️ Modo claro'}</span><button class="btn ghost" id="themeBtn2" type="button">${dark ? 'Usar modo claro' : 'Usar modo oscuro'}</button></div>
+        <p class="note" style="text-align:center">Versión ${APP_VERSION} · <button class="link-btn" id="diagBtn" type="button" style="margin:0">Diagnóstico de pantalla</button></p>`;
       $('shareBody').innerHTML = who + spaceSel + spaceName + link + members + add + superSec + out + ver;
     }
     async function renameSpace() {
@@ -1332,6 +1400,7 @@
         tg.setAttribute('aria-pressed', String(d.draft.etiquetas.includes(n)));
         updateDetailFoot(); return;
       }
+      if (e.target.closest('#tdTagsEdit')) { renderTagModal(); openModal('tagModal'); return; }
       if (e.target.closest('#tdRemoveReceipt')) { d.removeFactura = true; renderTxDetail(); return; }
       if (e.target.closest('#tdUndoReceipt')) { d.receipt = null; renderTxDetail(); return; }
     });
@@ -1350,6 +1419,8 @@
       const id = e.target.id;
       if (id === 'tdWallet') { d.draft.cartera = e.target.value; updateDetailFoot(); }
       else if (id === 'tdFecha') { d.draft.fecha = e.target.value; updateDetailFoot(); }
+      else if (id === 'tdRepeat') { d.draft.repeat = e.target.value; }
+      else if (id === 'tdCatSel' && e.target.value === '__edit') { e.target.value = d.draft.categoria; state.formType = d.draft.tipo; openCatModal(); }
       else if (id === 'tdCatSel') { d.draft.categoria = e.target.value; $('txModal').querySelector('.tx-sheet').style.setProperty('--cc', catColor(d.draft.categoria)); updateDetailFoot(); }
       else if (e.target.matches('[data-td-file]')) {
         const file = e.target.files && e.target.files[0];
@@ -1375,7 +1446,8 @@
           if (state.detail && !state.detail.draft.etiquetas.includes(tag.nombre)) state.detail.draft.etiquetas.push(tag.nombre);
           renderTxDetail();
         } catch (err) { toast(err.message, true); }
-      } else if (e.key === 'Enter' && e.target.id === 'tdMonto') { e.preventDefault(); d.editing = false; renderTxDetail(); }
+      } else if (e.key === 'Enter' && d.isNew && (e.target.id === 'tdMonto' || e.target.id === 'tdDesc') && !e.shiftKey) { e.preventDefault(); saveNewTx(); }
+      else if (e.key === 'Enter' && e.target.id === 'tdMonto') { e.preventDefault(); d.editing = false; renderTxDetail(); }
     });
     $('walletStrip').addEventListener('click', e => {
       if (e.target.closest('#manageWallets')) { openWalletModal(); return; }
@@ -1537,6 +1609,7 @@
       if (logoTaps < 5) return;
       logoTaps = 0; showDiag();
     });
+    document.addEventListener('click', e => { if (e.target.closest('#themeBtn2')) { $('themeBtn').click(); renderShareModal(); } });
     document.addEventListener('click', e => { if (e.target.closest('#diagBtn')) { closeModals(); setTimeout(showDiag, 150); } });
     function showDiag() {
       const probe = document.createElement('div');
@@ -1582,7 +1655,7 @@
     window.NFUI = { state, $, money, escapeHtml, iconFor, catColor, call, toast, openModal, closeModals, load, render, setView,
       walletIcon, walletOf, iso, parseISO, fmtDate, ICONS, CHART_COLORS, cssVar, delButton, armOrRun, resetDel, isTouch,
       formatAmountInput, parseAmount, openTxDetail, buildChart, txRow, store,
-      renderList, renderSummary, inWallet, scoped, monthKey, LOCALE, PAGE, deleteTx, setRange };
+      renderList, renderSummary, inWallet, scoped, monthKey, LOCALE, PAGE, deleteTx, setRange, openNewTx, walletBalances: balances, NONE };
     document.body.dataset.view = 'mov';
 
     /* Arranque: primero la sesión, luego los datos */

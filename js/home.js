@@ -95,26 +95,82 @@
     selectBucket(s);
   }
 
+  let kind = U.store.get('nf-grafica') === 'line' ? 'line' : 'bar';
+  const rangeLabelOf = (g, sel) => gran === 'all' || (!state.from && !state.to) ? 'Todos los movimientos'
+    : sel ? rangeText(g, sel) : U.fmtDate(state.from, { day: 'numeric', month: 'short' }) + ' – ' + U.fmtDate(state.to, { day: 'numeric', month: 'short', year: 'numeric' });
+
+  /* Saldo día a día (o mes a mes en rangos largos) de las carteras elegidas */
+  function balanceSeries() {
+    const t = today();
+    const dates = state.transactions.filter(U.inWallet).map(x => x.fecha).sort();
+    let from = state.from || (dates[0] || t), to = state.to && state.to < t ? state.to : t;
+    if (to < from) to = from;
+    const monthly = (parseISO(to) - parseISO(from)) / 864e5 > 120;
+    const wallets = state.wallet === 'Todas' ? state.wallets : state.wallets.filter(w => w.nombre === state.wallet);
+    let base = wallets.reduce((a, w) => a + (w.saldoInicial || 0), 0);
+    const txs = state.transactions.filter(U.inWallet).slice().sort((a, b) => a.fecha.localeCompare(b.fecha));
+    const points = [];
+    const d = parseISO(from), end = parseISO(to);
+    if (monthly) d.setDate(1);
+    while (d <= end && points.length < 400) {
+      let k;
+      if (monthly) { const e = new Date(d.getFullYear(), d.getMonth() + 1, 0); k = iso(e > end ? end : e); }
+      else k = iso(d);
+      points.push(k);
+      monthly ? d.setMonth(d.getMonth() + 1) : d.setDate(d.getDate() + 1);
+    }
+    let i = 0, run = base;
+    const startBal = (() => { let b = base; txs.forEach(x => { if (x.fecha < from) b += x.tipo === 'Ingreso' ? x.monto : -x.monto; }); return b; })();
+    const values = points.map(k => { while (i < txs.length && txs[i].fecha <= k) { run += txs[i].tipo === 'Ingreso' ? txs[i].monto : -txs[i].monto; i++; } return run; });
+    const labels = points.map(k => monthly ? parseISO(k).toLocaleDateString(LOC, { month: 'short' }).replace('.', '') : short(parseISO(k)));
+    return { labels, values, startBal, monthly };
+  }
+
   function renderCash() {
     const rows = U.scoped();
     let sIn = 0, sOut = 0;
     rows.forEach(t => t.tipo === 'Ingreso' ? sIn += t.monto : sOut += t.monto);
-    const net = sIn - sOut;
-    $('cashNet').textContent = (net < 0 ? '−' : '') + fmt(Math.abs(net));
-    $('cashNet').className = 'cash-net num ' + (net < 0 ? 'neg' : 'pos');
-    $('cashIn').textContent = '+ ' + fmt(sIn);
-    $('cashOut').textContent = '− ' + fmt(sOut);
-    $('cashGran').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.gran === gran)));
-
     const { g, list } = buckets();
     const sel = selectedStart();
-    const rangeLabel = gran === 'all' || (!state.from && !state.to) ? 'Todos los movimientos'
-      : sel ? rangeText(g, sel) : U.fmtDate(state.from, { day: 'numeric', month: 'short' }) + ' – ' + U.fmtDate(state.to, { day: 'numeric', month: 'short', year: 'numeric' });
-    $('cashTitle').textContent = 'Flujo de caja · ' + rangeLabel;
+    const rangeLabel = rangeLabelOf(g, sel);
+    $('cashIn').textContent = '+ ' + fmt(sIn);
+    $('cashOut').textContent = '− ' + fmt(sOut);
     $('cashRange').textContent = rangeLabel;
     $('cashPrev').disabled = gran === 'all';
     $('cashNext').disabled = gran === 'all' || (sel && add(g, sel, 1) > new Date());
+    $('cashKind').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.kind === kind)));
+    const walletName = state.wallet === 'Todas' ? '' : state.wallet === U.NONE ? ' · Sin asignar' : ' · ' + state.wallet;
+    const muted = U.cssVar('--muted'), line = U.cssVar('--line');
 
+    if (kind === 'line') {
+      const ser = balanceSeries();
+      const endBal = ser.values.length ? ser.values[ser.values.length - 1] : ser.startBal;
+      const diff = endBal - ser.startBal;
+      $('cashNet').textContent = (endBal < 0 ? '−' : '') + fmt(Math.abs(endBal));
+      $('cashNet').className = 'cash-net num ' + (endBal < 0 ? 'neg' : 'pos');
+      $('cashTitle').innerHTML = `Saldo${esc(walletName)} · ${esc(rangeLabel)} · <span class="${diff < 0 ? 'over-text' : 'ok-text'}">${diff < 0 ? '▼' : '▲'} ${fmt(Math.abs(diff))}</span>`;
+      if (typeof Chart === 'undefined') return;
+      const c = endBal < 0 ? U.cssVar('--expense') : U.cssVar('--accent');
+      U.buildChart('cash', 'cashChart', {
+        type: 'line',
+        data: { labels: ser.labels, datasets: [{ label: 'Saldo', data: ser.values, borderColor: c, backgroundColor: c + '22', fill: true, tension: .3, borderWidth: 2.5,
+          pointRadius: ser.values.map((_, i) => i === ser.values.length - 1 ? 4 : 0), pointBackgroundColor: U.cssVar('--surface'), pointBorderWidth: 2.5, pointBorderColor: c }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: { duration: 250 }, interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => 'Saldo: ' + fmt(x.parsed.y) } } },
+          scales: {
+            x: { grid: { display: false }, border: { display: false }, ticks: { color: muted, font: { size: 10.5 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 6 } },
+            y: { grid: { color: line }, border: { display: false }, ticks: { color: muted, font: { size: 10 }, maxTicksLimit: 4, callback: v => compact(v) } }
+          }
+        }
+      });
+      return;
+    }
+
+    const net = sIn - sOut;
+    $('cashNet').textContent = (net < 0 ? '−' : '') + fmt(Math.abs(net));
+    $('cashNet').className = 'cash-net num ' + (net < 0 ? 'neg' : 'pos');
+    $('cashTitle').textContent = 'Flujo de caja' + walletName + ' · ' + rangeLabel;
     // Totales por período (respeta la cartera elegida)
     const inc = list.map(() => 0), exp = list.map(() => 0);
     const keys = list.map(s => [iso(s), iso(endOf(g, s))]);
@@ -127,15 +183,14 @@
     const isSel = i => gran === 'all' || (sel && iso(list[i]) === iso(sel));
     const cIn = U.cssVar('--income'), cOut = U.cssVar('--expense');
     const fade = (c, i) => isSel(i) ? c : c + '55';
-    const muted = U.cssVar('--muted'), line = U.cssVar('--line');
     if (typeof Chart === 'undefined') return;
     U.buildChart('cash', 'cashChart', {
       type: 'bar',
       data: {
         labels: list.map(s => bucketLabel(g, s)),
         datasets: [
-          { label: 'Ingresos', data: inc, backgroundColor: inc.map((_, i) => fade(cIn, i)), borderRadius: 6, maxBarThickness: 22, categoryPercentage: .7, barPercentage: .9 },
-          { label: 'Gastos', data: exp, backgroundColor: exp.map((_, i) => fade(cOut, i)), borderRadius: 6, maxBarThickness: 22, categoryPercentage: .7, barPercentage: .9 }
+          { label: 'Ingresos', data: inc, backgroundColor: inc.map((_, i) => fade(cIn, i)), borderRadius: 4, maxBarThickness: 16, categoryPercentage: .62, barPercentage: .92 },
+          { label: 'Gastos', data: exp, backgroundColor: exp.map((_, i) => fade(cOut, i)), borderRadius: 4, maxBarThickness: 16, categoryPercentage: .62, barPercentage: .92 }
         ]
       },
       options: {
@@ -143,8 +198,8 @@
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.dataset.label + ': ' + fmt(c.parsed.y) } } },
         scales: {
           x: { grid: { display: false }, border: { display: false },
-            ticks: { color: c => isSel(c.index) ? U.cssVar('--ink') : muted, font: c => ({ size: 11, weight: isSel(c.index) ? '800' : '500' }), maxRotation: 0, autoSkip: false } },
-          y: { beginAtZero: true, grid: { color: line }, border: { display: false }, ticks: { color: muted, font: { size: 10 }, maxTicksLimit: 4, callback: v => compact(v) } }
+            ticks: { color: c => isSel(c.index) ? U.cssVar('--ink') : muted, font: c => ({ size: 10.5, weight: isSel(c.index) ? '800' : '500' }), maxRotation: 0, autoSkip: false } },
+          y: { beginAtZero: true, grid: { color: line }, border: { display: false }, ticks: { color: muted, font: { size: 10 }, maxTicksLimit: 3, callback: v => compact(v) } }
         },
         onClick: (evt, els, chart) => {
           const hit = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, false);
@@ -155,7 +210,10 @@
     });
   }
 
-  $('cashGran').addEventListener('click', e => { const b = e.target.closest('[data-gran]'); if (b) setGran(b.dataset.gran); });
+  $('cashKind').addEventListener('click', e => {
+    const b = e.target.closest('[data-kind]'); if (!b || b.dataset.kind === kind) return;
+    kind = b.dataset.kind; U.store.set('nf-grafica', kind); renderCash();
+  });
   function step(n) {
     const g = gran === 'all' ? 'year' : gran;
     const sel = selectedStart() || startOf(g, state.from ? parseISO(state.from) : new Date());
@@ -165,31 +223,93 @@
   }
   $('cashPrev').addEventListener('click', () => step(-1));
   $('cashNext').addEventListener('click', () => step(1));
-  // Tocar el rango muestra las fechas personalizadas
-  $('cashRange').addEventListener('click', () => {
-    const on = document.documentElement.classList.toggle('show-filters');
-    if (on) document.querySelector('.filters').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  $('cashRange').addEventListener('click', () => openFilter(true));
+
+  /* =========================================================
+     FILTRO (arriba): período y carteras
+     ========================================================= */
+  const pop = $('filterPop');
+  const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  let showCustom = false;
+  function renderFilter() {
+    const { bal, none, hasNone } = U.walletBalances();
+    const total = Object.values(bal).reduce((a, b) => a + b, 0) + none;
+    const g = [['week', 'Semana', '📆'], ['month', 'Mes', '🗓️'], ['year', 'Año', '📅'], ['all', 'Todo', '♾️']];
+    const isCustom = gran !== 'all' && state.from && !selectedStart();
+    const row = (attr, val, label, sub, on, icon) => `<button type="button" class="fp-row" ${attr}="${esc(val)}" aria-pressed="${on}">
+        <span class="fp-check">${on ? CHECK : ''}</span>${icon ? `<span class="fp-ic">${icon}</span>` : ''}
+        <span class="fp-txt"><span>${esc(label)}</span>${sub ? `<small class="num ${sub.neg ? 'over-text' : ''}">${esc(sub.t)}</small>` : ''}</span></button>`;
+    pop.innerHTML = `
+      <p class="fp-sec">Período</p>
+      ${g.map(x => row('data-fp-gran', x[0], x[1], null, !isCustom && gran === x[0], x[2])).join('')}
+      ${row('data-fp-custom', '1', 'Fechas personalizadas', isCustom ? { t: U.fmtDate(state.from, { day: 'numeric', month: 'short' }) + ' – ' + U.fmtDate(state.to || today(), { day: 'numeric', month: 'short' }) } : null, isCustom, '✏️')}
+      <div class="fp-custom" ${showCustom ? '' : 'hidden'}>
+        <label>Desde<input type="date" id="fpFrom" value="${esc(state.from || '')}"></label>
+        <label>Hasta<input type="date" id="fpTo" value="${esc(state.to || today())}"></label>
+        <button type="button" class="btn" id="fpApply">Aplicar</button>
+      </div>
+      <p class="fp-sec">Carteras</p>
+      ${row('data-fp-wallet', 'Todas', 'Todas', { t: fmt(total), neg: total < 0 }, state.wallet === 'Todas', '🧾')}
+      ${state.wallets.map(w => row('data-fp-wallet', w.nombre, w.nombre, { t: fmt(bal[w.nombre] || 0), neg: (bal[w.nombre] || 0) < 0 }, state.wallet === w.nombre, U.walletIcon(w))).join('')}
+      ${hasNone ? row('data-fp-wallet', U.NONE, 'Sin asignar', { t: fmt(none), neg: none < 0 }, state.wallet === U.NONE, '❔') : ''}`;
+  }
+  function placeFilter() {
+    const r = $('filterBtn').getBoundingClientRect(), w = pop.offsetWidth || 320;
+    pop.style.top = Math.round(r.bottom + 8) + 'px';
+    pop.style.left = Math.round(Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8)) + 'px';
+  }
+  function openFilter(custom) {
+    showCustom = !!custom;
+    renderFilter();
+    pop.hidden = false; placeFilter(); $('filterBtn').setAttribute('aria-expanded', 'true');
+    if (custom) setTimeout(() => { const f = $('fpFrom'); if (f && !U.isTouch()) f.focus(); }, 30);
+  }
+  function closeFilter() { pop.hidden = true; $('filterBtn').setAttribute('aria-expanded', 'false'); }
+  $('filterBtn').addEventListener('click', e => { e.stopPropagation(); pop.hidden ? openFilter(false) : closeFilter(); });
+  document.addEventListener('click', e => { if (!pop.hidden && e.target.isConnected && !pop.contains(e.target) && !e.target.closest('#filterBtn') && !e.target.closest('#cashRange')) closeFilter(); });
+  window.addEventListener('resize', () => { if (!pop.hidden) placeFilter(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !pop.hidden) closeFilter(); });
+  pop.addEventListener('click', e => {
+    const gb = e.target.closest('[data-fp-gran]'); if (gb) { closeFilter(); setGran(gb.dataset.fpGran); return; }
+    if (e.target.closest('[data-fp-custom]')) { showCustom = !showCustom; renderFilter(); return; }
+    if (e.target.closest('#fpApply')) {
+      let f = $('fpFrom').value, t = $('fpTo').value;
+      if (!f || !t) { U.toast('Elige las dos fechas.', true); return; }
+      if (f > t) [f, t] = [t, f];
+      if (gran === 'all') { gran = 'month'; U.store.set('nf-flujo', gran); }
+      windowEnd = null; U.setRange(f, t, 'custom'); closeFilter(); U.render(); return;
+    }
+    const wb = e.target.closest('[data-fp-wallet]');
+    if (wb) {
+      state.wallet = wb.dataset.fpWallet; state.limit = U.PAGE;
+      if (U.walletOf(state.wallet)) U.store.set('finanzas-cartera', state.wallet);
+      closeFilter(); U.render();
+    }
   });
 
   /* =========================================================
-     ANILLOS DE PRESUPUESTO
+     ANILLOS DE PRESUPUESTO (los tuyos y los del hogar)
      ========================================================= */
   function renderRings() {
     const mk = today().slice(0, 7);
-    const st = I ? I.budgetStatus(state.budgets, state.transactions, mk, today()) : [];
+    const mine = state.budgets.filter(b => b.mine), others = state.budgets.filter(b => !b.mine);
+    const stat = list => I ? I.budgetStatus(list, state.transactions, mk, today()) : [];
+    const order = list => list.sort((a, b) => (!a.categoria ? 0 : 1) - (!b.categoria ? 0 : 1) || b.pct - a.pct);
+    const st = order(stat(mine)).map(b => Object.assign(b, { who: '' }))
+      .concat(...[...new Set(others.map(b => b.email))].map(em => order(stat(others.filter(b => b.email === em))).map(b => Object.assign(b, { who: em.split('@')[0] }))));
     const color = l => l === 'over' ? U.cssVar('--expense') : l === 'warn' ? '#E0A030' : U.cssVar('--income');
     const ring = (pct, l) => {
       const C = 2 * Math.PI * 25, p = Math.min(100, Math.max(0, pct));
       return `<svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="25" class="ring-bg"/><circle cx="30" cy="30" r="25" class="ring-fg" stroke="${color(l)}" stroke-dasharray="${(C * p / 100).toFixed(1)} ${C.toFixed(1)}"/></svg>`;
     };
-    const items = st.slice().sort((a, b) => (!a.categoria) - (!b.categoria) || b.pct - a.pct).map(b => {
+    const items = st.map(b => {
       const name = b.categoria || 'Total del mes', icon = b.categoria ? U.iconFor('Gasto', b.categoria) : '🧾';
-      return `<button type="button" class="ring" data-ring="1" title="${esc(name)}: ${fmt(b.spent)} de ${fmt(b.monto)}">
-        <span class="ring-circle">${ring(b.pct, b.level)}<span class="ring-ic">${icon}</span></span>
+      return `<button type="button" class="ring" data-ring="1" title="${esc(name)}${b.who ? ' (de ' + esc(b.who) + ')' : ''}: ${fmt(b.spent)} de ${fmt(b.monto)}">
+        <span class="ring-circle">${ring(b.pct, b.level)}<span class="ring-ic">${icon}</span>${b.who ? `<span class="ring-who">${esc(b.who.charAt(0).toUpperCase())}</span>` : ''}</span>
         <span class="ring-name">${esc(name)}</span><span class="ring-pct num ${b.level}-text">${Math.round(b.pct)}%</span></button>`;
     }).join('');
     $('budRings').innerHTML = items + `<button type="button" class="ring add" data-ring-add="1">
-        <span class="ring-circle"><span class="ring-plus">+</span></span><span class="ring-name">${st.length ? 'Presupuesto' : 'Crear presupuesto'}</span><span class="ring-pct">&nbsp;</span></button>`;
+        <span class="ring-circle"><span class="ring-plus">+</span></span><span class="ring-name">${mine.length ? 'Presupuesto' : 'Crear presupuesto'}</span><span class="ring-pct">&nbsp;</span></button>`;
   }
   $('budRings').addEventListener('click', e => {
     if (e.target.closest('[data-ring-add]')) { if (window.NFModules && NFModules.openBudget) NFModules.openBudget(null); return; }
@@ -338,17 +458,9 @@
   /* =========================================================
      BOTÓN + : el formulario como hoja inferior en el teléfono
      ========================================================= */
-  const phone = () => window.matchMedia('(max-width: 600px)').matches;
-  function openSheet() {
-    if (state.view !== 'mov') U.setView('mov');
-    document.documentElement.classList.add('form-open');
-    $('formPanel').scrollTop = 0;
-  }
   function closeSheet() { document.documentElement.classList.remove('form-open'); }
-  $('fabAdd').addEventListener('click', () => { if (phone()) openSheet(); else { U.setView('mov'); $('formPanel').scrollIntoView({ behavior: 'smooth' }); if (!U.isTouch()) $('monto').focus(); } });
-  $('formClose').addEventListener('click', closeSheet);
-  document.querySelector('#viewMov .side').addEventListener('click', e => { if (e.target === e.currentTarget) closeSheet(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.documentElement.classList.contains('form-open')) closeSheet(); });
+  function openSheet() { U.openNewTx(); }
+  $('fabAdd').addEventListener('click', () => U.openNewTx());
 
   /* ---------- Render ---------- */
   function render() {

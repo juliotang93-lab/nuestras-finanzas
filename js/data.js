@@ -70,7 +70,8 @@
   }
 
   /* ---------- Conversión a los objetos que usa la interfaz ---------- */
-  const mapBudget = b => ({ id: b.id, categoria: b.category_id ? (idx.catById[b.category_id] || {}).nombre || null : null, monto: Number(b.monto) || 0 });
+  const mapBudget = b => ({ id: b.id, categoria: b.category_id ? (idx.catById[b.category_id] || {}).nombre || null : null, monto: Number(b.monto) || 0,
+    email: b.email, mine: !b.email || b.email === ctx.email });
   const mapGoal = g => ({ id: g.id, nombre: g.nombre, icono: g.icono, monto: Number(g.monto_objetivo) || 0, fecha: g.fecha_objetivo || '',
     compartida: g.compartida, creadaPor: g.creada_por, creada: String(g.created_at || '').slice(0, 10),
     canEdit: g.creada_por === ctx.email, canDelete: g.creada_por === ctx.email || ctx.isOwner });
@@ -161,7 +162,7 @@
         fetchAll('space_members', 'email, role, created_at', 'created_at', bySpace),
         fetchAll('categories', '*', 'created_at', bySpace),
         fetchAll('tags', '*', 'created_at', bySpace),
-        optional(fetchAll('budgets', '*', 'created_at', q => q.eq('space_id', S).eq('email', ctx.email))),
+        optional(fetchAll('budgets', '*', 'created_at', q => q.eq('space_id', S))), // los del hogar: todos se ven, cada quien edita los suyos
         optional(fetchAll('goals', '*', 'created_at', bySpace)),
         optional(run(sb.from('user_prefs').select('*').eq('email', ctx.email).maybeSingle()), null)
       ]);
