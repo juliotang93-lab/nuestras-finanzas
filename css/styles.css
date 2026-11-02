@@ -767,3 +767,16 @@
       .topbar .icon-btn { width: 40px; height: 40px; }
     }
     .theme-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); font-weight: 600; }
+
+    /* ===== 2.5 · Transferencias entre carteras ===== */
+    .tr-icon { background: color-mix(in srgb, var(--accent) 14%, var(--surface)) !important; color: var(--accent); font-size: 22px; font-weight: 800; }
+    .tx-amount.tr { color: var(--ink); }
+    .tx-amount.tr.in { color: var(--income); }
+    .td-type { grid-template-columns: repeat(3, minmax(0, 1fr)); width: min(360px, 100%); }
+    .td-type button { padding: 9px 6px; font-size: 14px; }
+    .td-type button[aria-pressed="true"][data-td-type="Transferencia"] { background: var(--accent); color: var(--accent-ink); }
+    .td-type button:disabled { opacity: .4; cursor: default; }
+    .td-dup { display: flex !important; gap: 12px; align-items: flex-start; padding: 14px 16px !important; cursor: pointer; border-color: color-mix(in srgb, #E0A030 55%, var(--line)) !important; background: color-mix(in srgb, #E0A030 10%, var(--surface)) !important; }
+    .td-dup input { width: 22px; height: 22px; flex: none; margin-top: 2px; accent-color: var(--accent); }
+    .td-dup span { display: grid; gap: 3px; }
+    .td-dup small { color: var(--muted); font-size: 13px; line-height: 1.4; }
