@@ -85,9 +85,11 @@
   const mapCat = c => ({ id: c.id, nombre: c.nombre, tipo: c.tipo, icono: c.icono, creadaPor: c.creada_por || '', canDelete: ctx.isOwner || c.creada_por === ctx.email });
   const mapTag = t => ({ id: t.id, nombre: t.nombre, color: t.color, creadaPor: t.creada_por || '', canDelete: ctx.isOwner || t.creada_por === ctx.email });
   function mapTx(t, tagIds, urls) {
-    const cat = idx.catById[t.category_id], w = idx.walletById[t.wallet_id];
+    const cat = idx.catById[t.category_id], w = idx.walletById[t.wallet_id], wt = t.wallet_to ? idx.walletById[t.wallet_to] : null;
+    const isT = t.tipo === 'Transferencia';
     return {
-      id: t.id, fecha: t.fecha, tipo: t.tipo, categoria: cat ? cat.nombre : 'Otros', monto: Number(t.monto) || 0,
+      id: t.id, fecha: t.fecha, tipo: t.tipo, categoria: isT ? 'Transferencia' : cat ? cat.nombre : 'Otros', monto: Number(t.monto) || 0,
+      destino: isT ? (wt ? wt.nombre : '') : '',
       descripcion: t.descripcion || '', cartera: w ? w.nombre : '', creadoPor: t.creado_por || '',
       etiquetas: (tagIds || []).map(id => idx.tagById[id] && idx.tagById[id].nombre).filter(Boolean),
       factura: (t.factura_path && urls && urls[t.factura_path]) || t.factura_url || '',
@@ -139,15 +141,21 @@
   /* ---------- Validación de movimientos ---------- */
   function txRow(p) {
     const tipo = String(p.tipo);
-    if (tipo !== 'Gasto' && tipo !== 'Ingreso') throw new Error('El tipo debe ser Ingreso o Gasto.');
+    if (tipo !== 'Gasto' && tipo !== 'Ingreso' && tipo !== 'Transferencia') throw new Error('El tipo debe ser Ingreso, Gasto o Transferencia.');
     const monto = Math.round(Number(p.monto) * 100) / 100;
     if (!isFinite(monto) || monto <= 0) throw new Error('El monto debe ser un número mayor que 0.');
-    const cat = idx.catByKey[tipo + '|' + p.categoria];
-    if (!cat) throw new Error('Selecciona una categoría válida.');
     const w = idx.walletByName[p.cartera];
     if (!w) throw new Error('Selecciona una cartera a la que tengas acceso.');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(p.fecha))) throw new Error('Fecha inválida.');
     const tagIds = [...new Set((p.etiquetas || []).map(n => idx.tagByName[n] && idx.tagByName[n].id).filter(Boolean))];
+    if (tipo === 'Transferencia') {
+      const to = idx.walletByName[p.destino];
+      if (!to) throw new Error('Elige la cartera a la que va el dinero.');
+      if (to.id === w.id) throw new Error('La cartera de origen y la de destino deben ser distintas.');
+      return { row: { fecha: p.fecha, tipo, category_id: null, wallet_id: w.id, wallet_to: to.id, monto, descripcion: clean(p.descripcion, 200) }, tagIds };
+    }
+    const cat = idx.catByKey[tipo + '|' + p.categoria];
+    if (!cat) throw new Error('Selecciona una categoría válida.');
     return { row: { fecha: p.fecha, tipo, category_id: cat.id, wallet_id: w.id, monto, descripcion: clean(p.descripcion, 200) }, tagIds };
   }
 
@@ -169,7 +177,9 @@
       const ids = wallets.map(w => w.id), goalIds = goals.map(g => g.id);
       const [walletMembers, txs, recurring, contributions] = await Promise.all([
         ids.length ? fetchAll('wallet_members', '*', null, q => q.in('wallet_id', ids)) : [],
-        ids.length ? fetchAll('transactions', '*, transaction_tags(tag_id)', 'fecha', q => q.in('wallet_id', ids)) : [],
+        // También las transferencias que llegan a una de tus carteras desde otra que no ves
+        ids.length ? fetchAll('transactions', '*, transaction_tags(tag_id)', 'fecha', q => q.or(`wallet_id.in.(${ids.join(',')}),wallet_to.in.(${ids.join(',')})`))
+          .catch(() => fetchAll('transactions', '*, transaction_tags(tag_id)', 'fecha', q => q.in('wallet_id', ids))) : [], // base sin la 2.5
         ids.length ? optional(fetchAll('recurring', '*', 'proxima', q => q.in('wallet_id', ids))) : [],
         goalIds.length ? optional(fetchAll('goal_contributions', '*', 'fecha', q => q.in('goal_id', goalIds))) : []
       ]);

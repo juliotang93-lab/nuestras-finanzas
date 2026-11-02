@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.4.0';
+    const APP_VERSION = '2.5.0';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
@@ -27,7 +27,7 @@
       tagList: [], formTags: [], tag: 'Todas', receipt: null,
       detail: null,
       budgets: [], goals: [], contributions: [], recurring: [], prefs: {},
-      listMode: 'list', day: '', catFilter: '',
+      listMode: 'list', day: '', catFilter: '', transfers: [],
       loading: true, saving: false
     };
     const charts = {};
@@ -118,14 +118,23 @@
     }
     // Eliminar desde la lista (deslizar): también sirve para los guardados sin conexión
     async function deleteTx(id) {
-      const t = state.transactions.find(x => x.id === id); if (!t) return;
+      const t = findTx(id); if (!t) return;
       if (t.pendiente) { queue.remove(id); }
       else await call('deleteTransaction', id);
-      state.transactions = state.transactions.filter(x => x.id !== id);
+      dropTx(id);
       render(); toast('Movimiento eliminado');
     }
+    /* Movimientos: los gastos e ingresos van en state.transactions (reportes, presupuestos, análisis);
+       las transferencias entre carteras van aparte en state.transfers: mueven saldos pero no son ingreso ni gasto */
+    const isTransfer = t => t && t.tipo === 'Transferencia';
+    const allTx = () => state.transactions.concat(state.transfers);
+    const findTx = id => state.transactions.find(x => x.id === id) || state.transfers.find(x => x.id === id);
+    function dropTx(id) { state.transactions = state.transactions.filter(x => x.id !== id); state.transfers = state.transfers.filter(x => x.id !== id); }
+    function putTx(tx) { dropTx(tx.id); (isTransfer(tx) ? state.transfers : state.transactions).push(tx); }
+    // Signo de una transferencia vista desde la cartera elegida (0 si se ven todas)
+    const transferSign = t => state.wallet === 'Todas' ? 0 : t.destino === state.wallet ? 1 : t.cartera === state.wallet ? -1 : 0;
     const inRange = t => (!state.from || t.fecha >= state.from) && (!state.to || t.fecha <= state.to);
-    const inWallet = t => state.wallet === 'Todas' || (state.wallet === NONE ? !walletOf(t.cartera) : t.cartera === state.wallet);
+    const inWallet = t => state.wallet === 'Todas' || (state.wallet === NONE ? !walletOf(t.cartera) : t.cartera === state.wallet || (isTransfer(t) && t.destino === state.wallet));
     const inTag = t => state.tag === 'Todas' || (t.etiquetas || []).includes(state.tag);
     const scoped = () => state.transactions.filter(t => inRange(t) && inWallet(t)); // la etiqueta solo filtra en Reportes
 
@@ -149,6 +158,10 @@
       state.transactions.forEach(t => {
         const s = t.tipo === 'Ingreso' ? t.monto : -t.monto;
         if (t.cartera in bal) bal[t.cartera] += s; else { none += s; hasNone = true; }
+      });
+      state.transfers.forEach(t => {
+        if (t.cartera in bal) bal[t.cartera] -= t.monto;
+        if (t.destino in bal) bal[t.destino] += t.monto;
       });
       return { bal, none, hasNone };
     }
@@ -192,7 +205,7 @@
       try {
         payload.id = NF.uuid();
         const tx = await NF.api.addTransaction(payload);
-        state.transactions.push(tx);
+        putTx(tx);
         NF.api.notifyTx(tx.id);
         let label = state.formType === 'Gasto' ? 'Gasto guardado' : 'Ingreso guardado';
         const repeat = $('repeat').value;
@@ -226,11 +239,11 @@
       remove(id) { try { queue.save(queue.all().filter(x => x.payload.id !== id)); } catch (e) {} }
     };
     const pendingTx = it => ({ id: it.payload.id, fecha: it.payload.fecha, tipo: it.payload.tipo, categoria: it.payload.categoria, cartera: it.payload.cartera,
-      monto: it.payload.monto, descripcion: it.payload.descripcion || '', etiquetas: it.payload.etiquetas || [], creadoPor: state.me,
+      monto: it.payload.monto, descripcion: it.payload.descripcion || '', destino: it.payload.destino || '', etiquetas: it.payload.etiquetas || [], creadoPor: state.me,
       factura: '', facturaPath: '', recurringId: '', pendiente: true, errorEnvio: it.error || '' });
     function mergePending() {
-      const have = new Set(state.transactions.map(t => t.id));
-      queue.all().forEach(it => { if (!have.has(it.payload.id)) state.transactions.push(pendingTx(it)); });
+      const have = new Set(allTx().map(t => t.id));
+      queue.all().forEach(it => { if (!have.has(it.payload.id)) putTx(pendingTx(it)); });
     }
     function saveOffline(payload, repeat) {
       payload.id = payload.id || NF.uuid();
@@ -244,7 +257,7 @@
         try { queue.save(queue.all().concat(item)); note = ' (sin la foto: agrégala al volver internet)'; }
         catch (e2) { toast('No se pudo guardar en este teléfono.', true); return; }
       }
-      state.transactions.push(pendingTx(item));
+      putTx(pendingTx(item));
       store.set('finanzas-cartera', payload.cartera);
       resetForm(); render();
       toast('Guardado en este teléfono' + note + '. Se enviará solo cuando vuelva internet.');
@@ -284,7 +297,7 @@
         + '¿Quieres descartarlo?';
       if (window.confirm(msg)) {
         queue.remove(t.id);
-        state.transactions = state.transactions.filter(x => x.id !== t.id);
+        dropTx(t.id);
         render(); toast('Movimiento descartado');
       }
     }
@@ -303,13 +316,13 @@
     const amountText = n => String(Math.round(n * 100) / 100).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 
     function openTxDetail(id) {
-      const t = state.transactions.find(x => x.id === id);
+      const t = findTx(id);
       if (!t) return;
       if (t.pendiente) { openPending(t); return; }
       state.detail = {
         id, editing: false, receipt: null, removeFactura: false, confirmClose: false, saving: false,
         orig: t,
-        draft: { tipo: t.tipo, categoria: t.categoria, cartera: walletOf(t.cartera) ? t.cartera : '', monto: t.monto, fecha: t.fecha, descripcion: t.descripcion, etiquetas: (t.etiquetas || []).slice() }
+        draft: { tipo: t.tipo, categoria: t.categoria, cartera: walletOf(t.cartera) ? t.cartera : '', destino: t.destino || '', monto: t.monto, fecha: t.fecha, descripcion: t.descripcion, etiquetas: (t.etiquetas || []).slice() }
       };
       renderTxDetail();
       resetDel($('tdDelete'));
@@ -341,19 +354,20 @@
       if (!x.monto || x.monto <= 0) { toast('Escribe un valor mayor que 0.', true); if ($('tdMonto')) $('tdMonto').focus(); return; }
       if (!x.cartera) { toast('Elige una cartera.', true); return; }
       if (!x.fecha) { toast('Elige una fecha.', true); return; }
-      const payload = { tipo: x.tipo, categoria: x.categoria, cartera: x.cartera, monto: x.monto, fecha: x.fecha, descripcion: x.descripcion.trim(),
+      if (x.tipo === 'Transferencia' && (!x.destino || x.destino === x.cartera)) { toast('Elige la cartera a la que va el dinero.', true); return; }
+      const payload = { tipo: x.tipo, categoria: x.categoria, cartera: x.cartera, destino: x.tipo === 'Transferencia' ? x.destino : '', monto: x.monto, fecha: x.fecha, descripcion: x.descripcion.trim(),
         etiquetas: x.etiquetas.slice(), factura: d.receipt ? { name: d.receipt.name, mimeType: d.receipt.mimeType, data: d.receipt.data } : null };
-      const repeat = x.repeat || '';
-      store.set('nf-ultima-cat-' + x.tipo, x.categoria);
+      const repeat = x.tipo === 'Transferencia' ? '' : x.repeat || '';
+      if (x.tipo !== 'Transferencia') store.set('nf-ultima-cat-' + x.tipo, x.categoria);
       if (!navigator.onLine) { closeTxDetail(true); saveOffline(payload, repeat); return; }
       d.saving = true;
       const btn = $('tdSave'); btn.disabled = true; btn.textContent = d.receipt ? 'Subiendo factura…' : 'Guardando…';
       try {
         payload.id = NF.uuid();
         const tx = await NF.api.addTransaction(payload);
-        state.transactions.push(tx);
+        putTx(tx);
         NF.api.notifyTx(tx.id);
-        let label = tx.tipo === 'Gasto' ? 'Gasto guardado' : 'Ingreso guardado';
+        let label = tx.tipo === 'Gasto' ? 'Gasto guardado' : tx.tipo === 'Ingreso' ? 'Ingreso guardado' : 'Transferencia guardada';
         closeTxDetail(true);
         if (repeat) {
           try {
@@ -373,19 +387,41 @@
       } finally { btn.disabled = false; updateDetailFoot(); }
     }
 
+    /* El otro lado de un pago entre carteras registrado aparte (mismo valor, en la otra cartera, ±5 días) */
+    function duplicateOf(d) {
+      const x = d.draft, o = d.orig;
+      const wantTipo = o.tipo === 'Gasto' ? 'Ingreso' : 'Gasto';
+      const wallet = o.tipo === 'Gasto' ? x.destino : x.cartera;
+      if (!wallet) return null;
+      const days = (a, b) => Math.abs(parseISO(a) - parseISO(b)) / 864e5;
+      return state.transactions.filter(t => t.id !== d.id && !t.pendiente && t.tipo === wantTipo && t.cartera === wallet
+        && Math.abs(t.monto - x.monto) < 0.5 && days(t.fecha, x.fecha) <= 5)
+        .sort((a, b) => days(a.fecha, x.fecha) - days(b.fecha, x.fecha))[0] || null;
+    }
+    // Abre un gasto (o ingreso) ya convertido en transferencia, listo para revisar y guardar
+    function openAsTransfer(id, other) {
+      openTxDetail(id);
+      const d = state.detail; if (!d || d.isNew) return;
+      d.editing = true;
+      if (d.orig.tipo === 'Ingreso') { d.draft.destino = d.orig.cartera; d.draft.cartera = other || ''; }
+      else d.draft.destino = other || '';
+      d.draft.tipo = 'Transferencia';
+      renderTxDetail();
+    }
+
     function detailDirty() {
       const d = state.detail; if (!d) return false;
       if (d.isNew) return !!(d.draft.monto || d.draft.descripcion.trim() || d.receipt);
       const o = d.orig, x = d.draft;
       return d.receipt || d.removeFactura || x.tipo !== o.tipo || x.categoria !== o.categoria || x.cartera !== o.cartera ||
-        Number(x.monto) !== Number(o.monto) || x.fecha !== o.fecha || x.descripcion !== o.descripcion ||
+        Number(x.monto) !== Number(o.monto) || x.fecha !== o.fecha || x.descripcion !== o.descripcion || (x.destino || '') !== (o.destino || '') ||
         x.etiquetas.slice().sort().join('|') !== (o.etiquetas || []).slice().sort().join('|');
     }
     function updateDetailFoot() {
       const d = state.detail; if (!d) return;
       const dirty = detailDirty();
       $('tdFoot').hidden = !dirty && !d.isNew;
-      if (d.isNew && !d.saving) $('tdSave').textContent = d.draft.tipo === 'Ingreso' ? 'Guardar ingreso' : 'Guardar gasto';
+      if (d.isNew && !d.saving) $('tdSave').textContent = d.draft.tipo === 'Ingreso' ? 'Guardar ingreso' : d.draft.tipo === 'Transferencia' ? 'Guardar transferencia' : 'Guardar gasto';
       else if (!d.saving) $('tdSave').textContent = 'Guardar cambios';
       d.confirmClose = false;
     }
@@ -393,17 +429,18 @@
     function renderTxDetail() {
       const d = state.detail; if (!d) return;
       const x = d.draft, o = d.orig;
-      const cc = catColor(x.categoria);
+      const isT = x.tipo === 'Transferencia';
+      const cc = isT ? cssVar('--accent') : catColor(x.categoria);
       $('txModal').querySelector('.tx-sheet').style.setProperty('--cc', cc);
       $('tdEdit').textContent = d.editing ? 'Listo' : 'Editar';
       $('tdEdit').setAttribute('aria-pressed', String(d.editing));
 
       // Encabezado: vista o edición de tipo, categoría y valor
       if (!d.editing) {
-        const sign = x.tipo === 'Ingreso' ? '+' : '−';
+        const sign = isT ? '' : x.tipo === 'Ingreso' ? '+' : '−';
         $('tdHeroBody').innerHTML = `
-          <span class="td-icon" aria-hidden="true">${iconFor(x.tipo, x.categoria)}</span>
-          <p class="td-cat" id="tdCat">${escapeHtml(x.categoria)}</p>
+          <span class="td-icon" aria-hidden="true">${isT ? TRANSFER_ICON : iconFor(x.tipo, x.categoria)}</span>
+          <p class="td-cat" id="tdCat">${isT ? 'Transferencia' : escapeHtml(x.categoria)}</p>
           <p class="td-amount num ${x.tipo === 'Ingreso' ? 'in' : ''}">${sign}${money.format(x.monto)}</p>`;
       } else {
         const cats = state.categories[x.tipo] || [];
@@ -414,15 +451,22 @@
           <div class="type-toggle td-type" role="group" aria-label="Tipo">
             <button type="button" data-td-type="Gasto" aria-pressed="${x.tipo === 'Gasto'}">Gasto</button>
             <button type="button" data-td-type="Ingreso" aria-pressed="${x.tipo === 'Ingreso'}">Ingreso</button>
+            <button type="button" data-td-type="Transferencia" aria-pressed="${isT}" ${state.wallets.length < 2 ? 'disabled title="Necesitas al menos dos carteras"' : ''}>Transferencia</button>
           </div>
           <div class="money-input td-money filled"><span class="prefix" aria-hidden="true">$</span>
             <input class="amount-input num" id="tdMonto" type="text" inputmode="numeric" autocomplete="off" value="${x.monto ? amountText(x.monto) : ''}" placeholder="0" aria-label="Valor"></div>
-          <select class="td-select-cat" id="tdCatSel" aria-label="Categoría">${catOpts}</select>`;
+          ${isT ? '<p class="td-cat">⇄ Entre tus carteras · no cuenta como ingreso ni gasto</p>' : `<select class="td-select-cat" id="tdCatSel" aria-label="Categoría">${catOpts}</select>`}`;
       }
 
       // Cuerpo
       const walletOpts = (x.cartera ? '' : '<option value="" selected>Elige una cartera</option>') +
         state.wallets.map(w => `<option value="${escapeHtml(w.nombre)}" ${w.nombre === x.cartera ? 'selected' : ''}>${walletIcon(w)} ${escapeHtml(w.nombre)}</option>`).join('');
+      const toOpts = (x.destino && walletOf(x.destino) ? '' : `<option value="" ${x.destino ? '' : 'selected'}>${x.destino ? escapeHtml(x.destino) : 'Elige la cartera'}</option>`) +
+        state.wallets.filter(w => w.nombre !== x.cartera).map(w => `<option value="${escapeHtml(w.nombre)}" ${w.nombre === x.destino ? 'selected' : ''}>${walletIcon(w)} ${escapeHtml(w.nombre)}</option>`).join('');
+      // Al convertir un gasto o un ingreso en transferencia, se busca el otro lado que quedó registrado aparte
+      const dup = isT && !d.isNew && o.tipo !== 'Transferencia' ? duplicateOf(d) : null;
+      d.dupId = dup ? dup.id : null;
+      if (dup && d.dupDelete === undefined) d.dupDelete = true;
       const tagChips = state.tagList.map(t => `<button type="button" class="td-chip" data-td-tag="${escapeHtml(t.nombre)}" aria-pressed="${x.etiquetas.includes(t.nombre)}" style="--tc:${t.color}">${escapeHtml(t.nombre)}</button>`).join('');
 
       let receipt;
@@ -444,12 +488,16 @@
 
       $('tdBody').innerHTML = `
         <div class="td-card td-rows">
-          <label class="td-row"><span>${x.tipo === 'Ingreso' ? 'Recibido en' : 'Pagado desde'}</span>
+          <label class="td-row"><span>${isT ? 'Desde' : x.tipo === 'Ingreso' ? 'Recibido en' : 'Pagado desde'}</span>
             <select id="tdWallet" aria-label="Cartera">${walletOpts}</select></label>
+          ${isT ? `<label class="td-row"><span>Hacia</span><select id="tdWalletTo" aria-label="Cartera de destino">${toOpts}</select></label>` : ''}
           <label class="td-row"><span>Cuándo</span><input type="date" id="tdFecha" value="${escapeHtml(x.fecha)}" aria-label="Fecha"></label>
-          ${d.isNew ? `<label class="td-row"><span>Repetir</span><select id="tdRepeat" aria-label="Repetir">${[['', 'No se repite'], ['mensual', 'Cada mes'], ['quincenal', 'Cada 15 días'], ['semanal', 'Cada semana'], ['anual', 'Cada año']].map(r => `<option value="${r[0]}" ${r[0] === (x.repeat || '') ? 'selected' : ''}>${r[1]}</option>`).join('')}</select></label>` : ''}
+          ${d.isNew && !isT ? `<label class="td-row"><span>Repetir</span><select id="tdRepeat" aria-label="Repetir">${[['', 'No se repite'], ['mensual', 'Cada mes'], ['quincenal', 'Cada 15 días'], ['semanal', 'Cada semana'], ['anual', 'Cada año']].map(r => `<option value="${r[0]}" ${r[0] === (x.repeat || '') ? 'selected' : ''}>${r[1]}</option>`).join('')}</select></label>` : ''}
           ${o.creadoPor && o.creadoPor !== state.me ? `<div class="td-row"><span>Registrado por</span><strong>${escapeHtml(shortName(o.creadoPor))}</strong></div>` : ''}
         </div>
+        ${dup ? `<label class="td-card td-dup"><input type="checkbox" id="tdDupDel" ${d.dupDelete ? 'checked' : ''}>
+          <span><strong>Eliminar el ${dup.tipo === 'Ingreso' ? 'ingreso' : 'gasto'} que quedó repetido</strong>
+          <small>${dup.tipo === 'Ingreso' ? 'Ingreso' : 'Gasto'} de ${money.format(dup.monto)} en ${escapeHtml(dup.cartera)} del ${escapeHtml(fmtDate(dup.fecha, { day: 'numeric', month: 'short' }))}${dup.descripcion ? ' · ' + escapeHtml(dup.descripcion) : ''}. Es el mismo dinero de esta transferencia.</small></span></label>` : ''}
         <div class="td-card">
           <textarea id="tdDesc" rows="2" maxlength="200" placeholder="Agrega una descripción">${escapeHtml(x.descripcion)}</textarea>
           <div class="td-tags" aria-label="Etiquetas">
@@ -482,6 +530,7 @@
       if (!x.monto || x.monto <= 0) { toast('Escribe un valor mayor que 0.', true); return; }
       if (!x.cartera) { toast('Elige una cartera.', true); return; }
       if (!x.fecha) { toast('Elige una fecha.', true); return; }
+      if (x.tipo === 'Transferencia' && (!x.destino || x.destino === x.cartera)) { toast('Elige la cartera a la que va el dinero.', true); return; }
       const payload = Object.assign({}, x, {
         descripcion: x.descripcion.trim(),
         factura: d.receipt ? { name: d.receipt.name, mimeType: d.receipt.mimeType, data: d.receipt.data } : null,
@@ -491,10 +540,15 @@
       const btn = $('tdSave'); btn.disabled = true; btn.textContent = d.receipt ? 'Subiendo factura…' : 'Guardando…';
       try {
         const tx = await call('updateTransaction', d.id, payload);
-        state.transactions = state.transactions.map(t => t.id === tx.id ? tx : t);
+        putTx(tx);
+        let msg = inRange(tx) && inWallet(tx) ? 'Movimiento actualizado' : 'Movimiento actualizado (fuera del filtro actual)';
+        if (isTransfer(tx) && d.dupId && d.dupDelete) {
+          try { await call('deleteTransaction', d.dupId); dropTx(d.dupId); msg = 'Convertido en transferencia y se eliminó el movimiento repetido'; }
+          catch (e) { msg = 'Se convirtió en transferencia, pero no se pudo eliminar el repetido: ' + e.message; }
+        } else if (isTransfer(tx) && d.orig.tipo !== 'Transferencia') msg = 'Convertido en transferencia';
         closeTxDetail(true);
         render();
-        toast(inRange(tx) && inWallet(tx) ? 'Movimiento actualizado' : 'Movimiento actualizado (fuera del filtro actual)');
+        toast(msg);
       } catch (err) {
         toast('No se pudo guardar: ' + err.message, true);
         if (state.detail) state.detail.saving = false;
@@ -504,7 +558,7 @@
     async function deleteTxDetail() {
       const d = state.detail; if (!d) return;
       await call('deleteTransaction', d.id);
-      state.transactions = state.transactions.filter(t => t.id !== d.id);
+      dropTx(d.id);
       closeTxDetail(true); render();
       toast('Movimiento eliminado');
     }
@@ -591,7 +645,7 @@
       $('saveWalletBtn').textContent = w ? 'Guardar cambios' : 'Crear cartera';
 
       if (w) {
-        const count = state.transactions.filter(t => t.cartera === w.nombre).length;
+        const count = allTx().filter(t => t.cartera === w.nombre || t.destino === w.nombre).length;
         $('wShare').innerHTML = `<h3>Compartir</h3>
           <div class="share-box">
             <div>${w.compartidaCon.length ? w.compartidaCon.map(e => `<span class="pill">${escapeHtml(e)}<button data-unshare="${escapeHtml(e)}" data-wid="${escapeHtml(w.id)}" aria-label="Dejar de compartir con ${escapeHtml(e)}">×</button></span>`).join('') : '<span class="note" style="margin:0">Aún no la compartes con nadie.</span>'}</div>
@@ -619,7 +673,7 @@
           const old = state.wallets.find(x => x.id === form.id);
           const res = await call('updateWallet', form.id, payload);
           if (old && old.nombre !== res.wallet.nombre) {
-            state.transactions.forEach(t => { if (t.cartera === old.nombre) t.cartera = res.wallet.nombre; });
+            allTx().forEach(t => { if (t.cartera === old.nombre) t.cartera = res.wallet.nombre; if (t.destino === old.nombre) t.destino = res.wallet.nombre; });
             if (state.wallet === old.nombre) state.wallet = res.wallet.nombre;
             if ($('cartera').value === old.nombre) store.set('finanzas-cartera', res.wallet.nombre);
           }
@@ -725,7 +779,7 @@
     }
     function renderTagModal() {
       $('tagList').innerHTML = state.tagList.length ? state.tagList.map(t => {
-        const n = state.transactions.filter(x => (x.etiquetas || []).includes(t.nombre)).length;
+        const n = allTx().filter(x => (x.etiquetas || []).includes(t.nombre)).length;
         return `<div class="w-row">
           <span class="sw" style="background:${t.color}"></span>
           <div><strong>${escapeHtml(t.nombre)}</strong><small>${n} movimiento(s)${t.creadaPor && t.creadaPor !== state.me ? ', creada por ' + escapeHtml(shortName(t.creadaPor)) : ''}</small></div>
@@ -1020,7 +1074,8 @@
       try {
         const data = preset || await call('getData');
         if (!preset) NF.cache.write(data);
-        state.transactions = data.transactions.slice();
+        state.transactions = data.transactions.filter(t => !isTransfer(t));
+        state.transfers = data.transactions.filter(isTransfer);
         mergePending();
         state.wallets = data.wallets;
         state.walletTypes = data.walletTypes;
@@ -1133,9 +1188,11 @@
       return CHART_COLORS[h % CHART_COLORS.length];
     }
     /* Fila de movimiento estilo tarjeta: toca para editar */
+    const TRANSFER_ICON = '⇄';
     function txRow(t, opts) {
       opts = opts || {};
       const w = walletOf(t.cartera);
+      if (isTransfer(t)) return transferRow(t, opts);
       const sign = t.tipo === 'Ingreso' ? '+' : '−';
       const desc = opts.withDate ? fmtDate(t.fecha) + (t.descripcion ? ', ' + t.descripcion : '') : t.descripcion;
       const extras = receiptLink(t) + tagsInline(t);
@@ -1153,11 +1210,30 @@
       </div>` + (opts.swipe ? '</div>' : '');
     }
 
+    function transferRow(t, opts) {
+      const sg = transferSign(t), sign = sg > 0 ? '+' : sg < 0 ? '−' : '';
+      const w = walletOf(t.cartera), wt = walletOf(t.destino);
+      const desc = opts.withDate ? fmtDate(t.fecha) + (t.descripcion ? ', ' + t.descripcion : '') : t.descripcion;
+      const extras = receiptLink(t) + tagsInline(t);
+      const open = opts.swipe ? `<div class="tx-swipe"><div class="tx-acts" aria-hidden="true"><button type="button" class="tx-act edit" data-sw-edit="${escapeHtml(t.id)}" tabindex="-1">✏️<span>Editar</span></button><button type="button" class="tx-act del" data-sw-del="${escapeHtml(t.id)}" tabindex="-1">🗑️<span>Eliminar</span></button></div>` : '';
+      return open + `<div class="tx is-transfer" role="button" tabindex="0" data-edit-tx="${escapeHtml(t.id)}" aria-label="Ver transferencia ${money.format(t.monto)}">
+        <span class="tx-icon tr-icon" aria-hidden="true">${TRANSFER_ICON}</span>
+        <span class="tx-main">
+          <strong>Transferencia</strong>
+          <small class="tx-wallet"><i>${w ? walletIcon(w) : '❔'}</i>${escapeHtml(t.cartera || 'Otra cartera')} → <i>${wt ? walletIcon(wt) : '👛'}</i>${escapeHtml(t.destino || 'Otra cartera')}${t.creadoPor && t.creadoPor !== state.me ? ' · ' + escapeHtml(shortName(t.creadoPor)) : ''}</small>
+          ${desc ? `<small>${escapeHtml(desc)}</small>` : ''}
+          ${extras ? `<small class="tx-extras">${extras}</small>` : ''}
+          ${t.pendiente ? `<small class="tx-pending ${t.errorEnvio ? 'err' : ''}">${t.errorEnvio ? '⚠️ No se pudo enviar' : '⏳ Pendiente de enviar'}</small>` : ''}
+        </span>
+        <span class="tx-amount num tr ${sg > 0 ? 'in' : ''}">${sign}${money.format(t.monto)}</span>
+      </div>` + (opts.swipe ? '</div>' : '');
+    }
+
     function renderList() {
       if (state.loading) return;
       if (window.NFHome && state.listMode === 'cal') { NFHome.renderCalendar(); return; }
       const q = state.query.toLowerCase();
-      const base = state.day ? state.transactions.filter(t => t.fecha === state.day && inWallet(t)) : scoped();
+      const base = state.day ? allTx().filter(t => t.fecha === state.day && inWallet(t)) : allTx().filter(t => inRange(t) && inWallet(t));
       const rows = base
         .filter(t => !state.catFilter || t.categoria === state.catFilter)
         .filter(t => state.filter === 'Todos' || t.tipo === state.filter)
@@ -1179,7 +1255,7 @@
       shown.forEach(t => (groups[t.fecha] = groups[t.fecha] || []).push(t));
       $('txList').innerHTML = Object.keys(groups).map(date => {
         const items = groups[date];
-        const net = items.reduce((s, t) => s + (t.tipo === 'Ingreso' ? t.monto : -t.monto), 0);
+        const net = items.reduce((s, t) => s + (isTransfer(t) ? transferSign(t) * t.monto : t.tipo === 'Ingreso' ? t.monto : -t.monto), 0);
         return `<div class="day-group">
           <div class="day-title"><span>${dayLabel(date)}</span><span class="num">${net >= 0 ? '+' : '−'}${money.format(Math.abs(net))}</span></div>
           <div class="day-card">${items.map(t => txRow(t, { swipe: true })).join('')}</div>
@@ -1386,9 +1462,21 @@
       const ty = e.target.closest('[data-td-type]');
       if (ty) {
         if (d.draft.tipo !== ty.dataset.tdType) {
+          const from = d.draft.tipo;
           d.draft.tipo = ty.dataset.tdType;
-          const cats = state.categories[d.draft.tipo] || [];
-          if (!cats.some(c => c[0] === d.draft.categoria)) d.draft.categoria = cats.length ? cats[0][0] : '';
+          if (d.draft.tipo === 'Transferencia') {
+            // Un ingreso que se convierte: el dinero llegó a esta cartera, así que esta es la de destino
+            if (!d.isNew && d.orig.tipo === 'Ingreso' && from === 'Ingreso') { d.draft.destino = d.orig.cartera; d.draft.cartera = ''; }
+            if (!d.draft.cartera) { const o = state.wallets.find(w => w.nombre !== d.draft.destino); d.draft.cartera = o ? o.nombre : ''; }
+            if (!d.draft.destino || d.draft.destino === d.draft.cartera) { const o = state.wallets.find(w => w.nombre !== d.draft.cartera); d.draft.destino = o ? o.nombre : ''; }
+          } else {
+            if (from === 'Transferencia' && !walletOf(d.draft.cartera)) d.draft.cartera = (state.wallets[0] || {}).nombre || '';
+            const cats = state.categories[d.draft.tipo] || [];
+            if (!cats.some(c => c[0] === d.draft.categoria)) {
+              const last = store.get('nf-ultima-cat-' + d.draft.tipo);
+              d.draft.categoria = (cats.find(c => c[0] === last) || cats[0] || [''])[0];
+            }
+          }
           renderTxDetail();
         }
         return;
@@ -1417,7 +1505,13 @@
     $('txModal').addEventListener('change', async e => {
       const d = state.detail; if (!d) return;
       const id = e.target.id;
-      if (id === 'tdWallet') { d.draft.cartera = e.target.value; updateDetailFoot(); }
+      if (id === 'tdWallet') {
+        d.draft.cartera = e.target.value;
+        if (d.draft.tipo === 'Transferencia') { if (d.draft.destino === d.draft.cartera) { const o = state.wallets.find(w => w.nombre !== d.draft.cartera); d.draft.destino = o ? o.nombre : ''; } renderTxDetail(); }
+        else updateDetailFoot();
+      }
+      else if (id === 'tdWalletTo') { d.draft.destino = e.target.value; renderTxDetail(); }
+      else if (id === 'tdDupDel') { d.dupDelete = e.target.checked; }
       else if (id === 'tdFecha') { d.draft.fecha = e.target.value; updateDetailFoot(); }
       else if (id === 'tdRepeat') { d.draft.repeat = e.target.value; }
       else if (id === 'tdCatSel' && e.target.value === '__edit') { e.target.value = d.draft.categoria; state.formType = d.draft.tipo; openCatModal(); }
@@ -1655,7 +1749,8 @@
     window.NFUI = { state, $, money, escapeHtml, iconFor, catColor, call, toast, openModal, closeModals, load, render, setView,
       walletIcon, walletOf, iso, parseISO, fmtDate, ICONS, CHART_COLORS, cssVar, delButton, armOrRun, resetDel, isTouch,
       formatAmountInput, parseAmount, openTxDetail, buildChart, txRow, store,
-      renderList, renderSummary, inWallet, scoped, monthKey, LOCALE, PAGE, deleteTx, setRange, openNewTx, walletBalances: balances, NONE };
+      renderList, renderSummary, inWallet, scoped, monthKey, LOCALE, PAGE, deleteTx, setRange, openNewTx, walletBalances: balances, NONE,
+      openAsTransfer, allTx, isTransfer, transferSign, findTx };
     document.body.dataset.view = 'mov';
 
     /* Arranque: primero la sesión, luego los datos */

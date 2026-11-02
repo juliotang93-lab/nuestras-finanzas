@@ -108,7 +108,10 @@
     const monthly = (parseISO(to) - parseISO(from)) / 864e5 > 120;
     const wallets = state.wallet === 'Todas' ? state.wallets : state.wallets.filter(w => w.nombre === state.wallet);
     let base = wallets.reduce((a, w) => a + (w.saldoInicial || 0), 0);
-    const txs = state.transactions.filter(U.inWallet).slice().sort((a, b) => a.fecha.localeCompare(b.fecha));
+    // Gastos e ingresos, más las transferencias que entran o salen de la cartera elegida (con todas, se compensan)
+    const txs = state.transactions.filter(U.inWallet).map(x => ({ fecha: x.fecha, v: x.tipo === 'Ingreso' ? x.monto : -x.monto }))
+      .concat(state.wallet === 'Todas' ? [] : (state.transfers || []).filter(U.inWallet).map(x => ({ fecha: x.fecha, v: U.transferSign(x) * x.monto })))
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
     const points = [];
     const d = parseISO(from), end = parseISO(to);
     if (monthly) d.setDate(1);
@@ -120,8 +123,8 @@
       monthly ? d.setMonth(d.getMonth() + 1) : d.setDate(d.getDate() + 1);
     }
     let i = 0, run = base;
-    const startBal = (() => { let b = base; txs.forEach(x => { if (x.fecha < from) b += x.tipo === 'Ingreso' ? x.monto : -x.monto; }); return b; })();
-    const values = points.map(k => { while (i < txs.length && txs[i].fecha <= k) { run += txs[i].tipo === 'Ingreso' ? txs[i].monto : -txs[i].monto; i++; } return run; });
+    const startBal = (() => { let b = base; txs.forEach(x => { if (x.fecha < from) b += x.v; }); return b; })();
+    const values = points.map(k => { while (i < txs.length && txs[i].fecha <= k) { run += txs[i].v; i++; } return run; });
     const labels = points.map(k => monthly ? parseISO(k).toLocaleDateString(LOC, { month: 'short' }).replace('.', '') : short(parseISO(k)));
     return { labels, values, startBal, monthly };
   }
@@ -437,7 +440,7 @@
     const ed = e.target.closest('[data-sw-edit]');
     if (ed) {
       e.stopPropagation(); closeAll();
-      const t = state.transactions.find(x => x.id === ed.dataset.swEdit);
+      const t = U.findTx(ed.dataset.swEdit);
       U.openTxDetail(ed.dataset.swEdit);
       if (t && !t.pendiente && state.detail && !state.detail.editing) $('tdEdit').click();
       return;

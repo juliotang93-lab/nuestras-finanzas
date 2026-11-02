@@ -339,7 +339,25 @@
      ========================================================= */
   function currentAlerts() {
     if (!state.transactions.length && !state.goals.length) return [];
-    return I.alerts({ txs: state.transactions, budgets: state.budgets.filter(b => b.mine), goals: state.goals, contributions: state.contributions, rules: state.recurring, today: today(), money, dismissed });
+    return transferAlerts().concat(I.alerts({ txs: state.transactions, budgets: state.budgets.filter(b => b.mine), goals: state.goals, contributions: state.contributions, rules: state.recurring, today: today(), money, dismissed }));
+  }
+  /* Pagos entre carteras registrados como gasto en una e ingreso en otra (duplican los ingresos en los reportes) */
+  function transferAlerts() {
+    const from = I.addDays(today(), -120), used = new Set(), out = [];
+    const days = (a, b) => Math.abs(U.parseISO(a) - U.parseISO(b)) / 864e5;
+    const gastos = state.transactions.filter(t => t.tipo === 'Gasto' && t.fecha >= from && t.monto >= 50000 && !t.pendiente && U.walletOf(t.cartera));
+    const ingresos = state.transactions.filter(t => t.tipo === 'Ingreso' && t.fecha >= from && t.monto >= 50000 && !t.pendiente && U.walletOf(t.cartera));
+    gastos.sort((a, b) => b.fecha.localeCompare(a.fecha)).forEach(g => {
+      const i = ingresos.find(x => !used.has(x.id) && x.cartera !== g.cartera && Math.abs(x.monto - g.monto) < 0.5 && days(x.fecha, g.fecha) <= 3);
+      if (!i) return;
+      used.add(i.id);
+      const key = 'tr-' + g.id + '-' + i.id;
+      if (dismissed.has(key)) return;
+      out.push({ key, level: 'warn', title: '¿Pago entre tus carteras registrado dos veces?',
+        body: 'Gasto de ' + fmt(g.monto) + ' en ' + g.cartera + ' e ingreso igual en ' + i.cartera + ' (' + shortDate(i.fecha) + '). Si fue un pago entre tus carteras, conviértelo en transferencia para no duplicar ingresos.',
+        view: 'mov', tx: g.id, to: i.cartera, action: 'Convertir' });
+    });
+    return out.slice(0, 5);
   }
   function renderBell() {
     const b = $('bellBadge'); if (!b) return;
@@ -395,7 +413,7 @@
       ${list.length ? list.map(a => `<div class="alert-item al-${a.level}">
           <span class="al-dot" aria-hidden="true"></span>
           <div class="bud-main"><strong>${esc(a.title)}</strong><small>${esc(a.body)}</small>
-            <span class="row-actions"><button type="button" class="link-btn" data-al-go="${a.view}">Ver</button><button type="button" class="link-btn muted" data-al-hide="${esc(a.key)}">Ocultar</button></span></div>
+            <span class="row-actions">${a.tx ? `<button type="button" class="link-btn" data-al-tx="${esc(a.tx)}" data-al-to="${esc(a.to || '')}">${esc(a.action || 'Ver')}</button>` : `<button type="button" class="link-btn" data-al-go="${a.view}">Ver</button>`}<button type="button" class="link-btn muted" data-al-hide="${esc(a.key)}">Ocultar</button></span></div>
         </div>`).join('') : empty('Todo en orden', 'No hay alertas por ahora. Aquí verás avisos de presupuestos, cobros dobles, suscripciones que suben y metas atrasadas.')}
       <h3>Notificaciones en el teléfono</h3>${pushHtml}${superHtml}`;
     U.openModal('alertModal');
@@ -487,6 +505,7 @@
   $('bellBtn').addEventListener('click', openAlerts);
   $('alertModal').addEventListener('click', async e => {
     const go = e.target.closest('[data-al-go]'); if (go) { U.closeModals(); U.setView(go.dataset.alGo); return; }
+    const atx = e.target.closest('[data-al-tx]'); if (atx) { U.closeModals(); U.setView('mov'); U.openAsTransfer(atx.dataset.alTx, atx.dataset.alTo); return; }
     const hd = e.target.closest('[data-al-hide]'); if (hd) { dismiss(hd.dataset.alHide); renderBell(); openAlerts(); return; }
     if (e.target.closest('#pushToggle')) {
       const btn = $('pushToggle'); btn.disabled = true;
