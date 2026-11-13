@@ -45,7 +45,7 @@
     for (let from = 0; ; from += size) {
       let q = sb.from(table).select(select || '*').range(from, from + size - 1);
       if (filter) q = filter(q);
-      if (order) q = q.order(order, { ascending: true });
+      if (order) [].concat(order).forEach(o => { q = q.order(o, { ascending: true }); });
       const rows = await run(q);
       out.push(...rows);
       if (rows.length < size) return out;
@@ -90,6 +90,7 @@
     return {
       id: t.id, fecha: t.fecha, tipo: t.tipo, categoria: isT ? 'Transferencia' : cat ? cat.nombre : 'Otros', monto: Number(t.monto) || 0,
       destino: isT ? (wt ? wt.nombre : '') : '',
+      createdAt: t.created_at || '', // hora de registro: ordena los movimientos del mismo día
       descripcion: t.descripcion || '', cartera: w ? w.nombre : '', creadoPor: t.creado_por || '',
       etiquetas: (tagIds || []).map(id => idx.tagById[id] && idx.tagById[id].nombre).filter(Boolean),
       factura: (t.factura_path && urls && urls[t.factura_path]) || t.factura_url || '',
@@ -178,8 +179,8 @@
       const [walletMembers, txs, recurring, contributions] = await Promise.all([
         ids.length ? fetchAll('wallet_members', '*', null, q => q.in('wallet_id', ids)) : [],
         // También las transferencias que llegan a una de tus carteras desde otra que no ves
-        ids.length ? fetchAll('transactions', '*, transaction_tags(tag_id)', 'fecha', q => q.or(`wallet_id.in.(${ids.join(',')}),wallet_to.in.(${ids.join(',')})`))
-          .catch(() => fetchAll('transactions', '*, transaction_tags(tag_id)', 'fecha', q => q.in('wallet_id', ids))) : [], // base sin la 2.5
+        ids.length ? fetchAll('transactions', '*, transaction_tags(tag_id)', ['fecha', 'created_at', 'id'], q => q.or(`wallet_id.in.(${ids.join(',')}),wallet_to.in.(${ids.join(',')})`))
+          .catch(() => fetchAll('transactions', '*, transaction_tags(tag_id)', ['fecha', 'created_at', 'id'], q => q.in('wallet_id', ids))) : [], // base sin la 2.5
         ids.length ? optional(fetchAll('recurring', '*', 'proxima', q => q.in('wallet_id', ids))) : [],
         goalIds.length ? optional(fetchAll('goal_contributions', '*', 'fecha', q => q.in('goal_id', goalIds))) : []
       ]);

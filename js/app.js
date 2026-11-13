@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.6.0';
+    const APP_VERSION = '2.6.1';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
@@ -126,6 +126,8 @@
     }
     /* Movimientos: los gastos e ingresos van en state.transactions (reportes, presupuestos, análisis);
        las transferencias entre carteras van aparte en state.transfers: mueven saldos pero no son ingreso ni gasto */
+    // Más reciente primero: por fecha y, dentro del mismo día, por la hora en que se registró
+    const newestFirst = (a, b) => b.fecha.localeCompare(a.fecha) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
     const isTransfer = t => t && t.tipo === 'Transferencia';
     const allTx = () => state.transactions.concat(state.transfers);
     const findTx = id => state.transactions.find(x => x.id === id) || state.transfers.find(x => x.id === id);
@@ -240,7 +242,7 @@
     };
     const pendingTx = it => ({ id: it.payload.id, fecha: it.payload.fecha, tipo: it.payload.tipo, categoria: it.payload.categoria, cartera: it.payload.cartera,
       monto: it.payload.monto, descripcion: it.payload.descripcion || '', destino: it.payload.destino || '', etiquetas: it.payload.etiquetas || [], creadoPor: state.me,
-      factura: '', facturaPath: '', recurringId: '', pendiente: true, errorEnvio: it.error || '' });
+      factura: '', facturaPath: '', recurringId: '', pendiente: true, errorEnvio: it.error || '', createdAt: it.at || '' });
     function mergePending() {
       const have = new Set(allTx().map(t => t.id));
       queue.all().forEach(it => { if (!have.has(it.payload.id)) putTx(pendingTx(it)); });
@@ -1238,7 +1240,7 @@
         .filter(t => !state.catFilter || t.categoria === state.catFilter)
         .filter(t => state.filter === 'Todos' || t.tipo === state.filter)
         .filter(t => !q || t.descripcion.toLowerCase().includes(q) || t.categoria.toLowerCase().includes(q) || (t.etiquetas || []).some(x => x.toLowerCase().includes(q)))
-        .sort((a, b) => b.fecha.localeCompare(a.fecha));
+        .sort(newestFirst);
 
       if (!state.wallets.length) {
         $('txList').innerHTML = `<div class="empty"><strong>Aún no tienes carteras</strong>Toca "+ Carteras" arriba para crear la primera.${state.me ? `<br><br>Si alguien te compartió una cartera, revisa que te la hayan compartido a <strong>${escapeHtml(state.me)}</strong>, que es la cuenta con la que estás usando la app.` : ''}</div>`;
@@ -1387,7 +1389,7 @@
     }
 
     function renderRepDetail(rows) {
-      const sorted = rows.slice().sort((a, b) => b.fecha.localeCompare(a.fecha));
+      const sorted = rows.slice().sort(newestFirst);
       const shown = sorted.slice(0, 50);
       $('repDetail').innerHTML = shown.length ? shown.map(t => txRow(t, { withDate: true })).join('') + (sorted.length > 50 ? `<p class="note">Mostrando 50 de ${sorted.length}. Usa la pestaña Movimientos o la hoja de Reportes para ver todo.</p>` : '')
         : '<div class="empty"><strong>Sin movimientos para este filtro</strong>Amplía el rango de fechas o elige otra cartera.</div>';
@@ -1411,7 +1413,7 @@
     /* Exporta a CSV lo que muestra Reportes (abre bien en Excel y Google Sheets) */
     async function exportCsv() {
       const rows = scoped().filter(t => t.tipo === state.repType && inTag(t) && (!state.repCat || t.categoria === state.repCat))
-        .sort((a, b) => b.fecha.localeCompare(a.fecha));
+        .sort(newestFirst);
       if (!rows.length) { toast('No hay movimientos para exportar con estos filtros.', true); return; }
       const q = v => { let x = String(v == null ? '' : v); if (/^[=+\-@]/.test(x)) x = "'" + x; return '"' + x.replace(/"/g, '""') + '"'; };
       const lines = [['Fecha', 'Tipo', 'Categoría', 'Cartera', 'Monto', 'Descripción', 'Etiquetas', 'Registrado por'].map(q).join(';')]
