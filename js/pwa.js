@@ -1,4 +1,25 @@
 /* Nuestras Finanzas · Instalación y actualizaciones */
+/* Mudanza: si NF_CONFIG.mudanza tiene la nueva dirección, la dirección vieja avisa y ofrece abrir la nueva */
+(function () {
+  'use strict';
+  const nueva = window.NF_CONFIG && window.NF_CONFIG.mudanza;
+  if (!nueva) return;
+  let destino;
+  try { destino = new URL(nueva); } catch (e) { return; }
+  if (destino.origin === location.origin) return;
+  const show = () => {
+    if (document.getElementById('moveBar')) return;
+    const bar = document.createElement('div');
+    bar.className = 'move-bar'; bar.id = 'moveBar'; bar.setAttribute('role', 'alert');
+    bar.innerHTML = '<strong>La app se mudó a una nueva dirección</strong><span>Ábrela allá, entra con Google y agrégala otra vez a la pantalla de inicio. Tus datos son los mismos.</span>';
+    const a = document.createElement('a');
+    a.href = destino.href; a.textContent = 'Abrir la nueva dirección'; a.rel = 'noopener';
+    bar.appendChild(a);
+    document.body.appendChild(bar);
+  };
+  if (document.body) show(); else document.addEventListener('DOMContentLoaded', show);
+})();
+
 (function () {
   'use strict';
   if (!('serviceWorker' in navigator) || !(location.protocol === 'https:' || location.hostname === 'localhost')) return;

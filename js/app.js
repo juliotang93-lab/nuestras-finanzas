@@ -2,7 +2,7 @@
 (function () {
   'use strict';
     /* ---------- Configuración ---------- */
-    const APP_VERSION = '2.5.0';
+    const APP_VERSION = '2.6.0';
     const LOCALE = 'es-CO';
     const CURRENCY = 'COP';
     const CURRENCY_DECIMALS = 0; // pon 2 si usas USD/EUR
